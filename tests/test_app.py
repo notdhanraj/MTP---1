@@ -106,6 +106,29 @@ class TestApp(unittest.TestCase):
         self.assertIn("Carcinogenic", html)
         self.assertIn("Review Required", html)
 
+    def test_template_contains_cabinet_swimlanes_and_layout_toggle(self):
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+
+        # Segmented view layout toggle
+        self.assertIn("activeViewMode", html)
+        self.assertIn("Card Grid", html)
+        self.assertIn("Cabinet Swimlanes", html)
+
+        # 6 Containment Zones in Swimlane View
+        self.assertIn("cabinetZones", html)
+        self.assertIn("expandedZones", html)
+        self.assertIn("toggleZone", html)
+        self.assertIn("toggleAllZones", html)
+        self.assertIn("Flammable Solvents Cabinet", html)
+        self.assertIn("Inorganic Acid Storage", html)
+        self.assertIn("Inorganic Base Storage", html)
+        self.assertIn("Carcinogenic & Toxic Organics", html)
+        self.assertIn("Biohazard & Infectious Holding", html)
+        self.assertIn("Safety Review Queue", html)
+
+
     def test_lookup_endpoint_success(self):
         import src.services as services
         fake = FakeClient()

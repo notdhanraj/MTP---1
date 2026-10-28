@@ -201,13 +201,33 @@
               </button>
             </div>
 
-            <!-- Filter Match Counter -->
-            <div class="text-xs font-mono text-slate-400 flex items-center gap-1.5">
-              <span>Showing</span>
-              <span class="font-bold text-emerald-400" x-text="filteredItems.length"></span>
-              <span>of</span>
-              <span class="font-bold text-white" x-text="activeBatch.items ? activeBatch.items.length : 0"></span>
-              <span>chemicals</span>
+            <!-- Filter Match Counter & Segmented View Layout Toggle -->
+            <div class="flex items-center gap-4 flex-wrap">
+              <div class="text-xs font-mono text-slate-400 flex items-center gap-1.5">
+                <span>Showing</span>
+                <span class="font-bold text-emerald-400" x-text="filteredItems.length"></span>
+                <span>of</span>
+                <span class="font-bold text-white" x-text="activeBatch.items ? activeBatch.items.length : 0"></span>
+                <span>chemicals</span>
+              </div>
+
+              <!-- Segmented View Layout Toggle -->
+              <div class="inline-flex rounded-lg bg-slate-950 p-1 border border-slate-800 text-xs">
+                <button type="button"
+                        @click="activeViewMode = 'grid'"
+                        :class="activeViewMode === 'grid' ? 'bg-slate-800 text-white shadow-sm font-semibold' : 'text-slate-400 hover:text-slate-200'"
+                        class="px-3 py-1.5 rounded-md transition flex items-center gap-1.5">
+                  <span>⊞</span>
+                  <span>Card Grid</span>
+                </button>
+                <button type="button"
+                        @click="activeViewMode = 'swimlanes'"
+                        :class="activeViewMode === 'swimlanes' ? 'bg-slate-800 text-white shadow-sm font-semibold' : 'text-slate-400 hover:text-slate-200'"
+                        class="px-3 py-1.5 rounded-md transition flex items-center gap-1.5">
+                  <span>☵</span>
+                  <span>Cabinet Swimlanes</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -280,73 +300,207 @@
           </div>
         </div>
 
-        <!-- 3-Column Physical Segregation Card Grid -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          <template x-for="item in filteredItems" :key="item.chemical">
-            <div :class="item.review_required ? 'border-amber-500/50 bg-amber-950/15 ring-1 ring-amber-500/30' : 'border-slate-800 bg-slate-900/90'"
-                 class="rounded-xl border p-5 shadow-lg flex flex-col justify-between transition hover:border-slate-700 space-y-4">
-              <div class="space-y-3">
-                <!-- Card Header -->
-                <div class="flex items-start justify-between gap-2">
-                  <h3 class="text-base font-bold text-white tracking-tight" x-text="item.chemical"></h3>
-                  <template x-if="item.review_required">
-                    <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 whitespace-nowrap">
-                      Review Required
-                    </span>
-                  </template>
-                </div>
-
-                <!-- Segregation Bin Badge -->
-                <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-800 text-slate-200 border border-slate-700">
-                  <span>🗄️</span>
-                  <span x-text="item.bin"></span>
-                </div>
-
-                <!-- Hazard Category Badges -->
-                <div class="flex flex-wrap gap-1">
-                  <template x-for="cat in item.categories" :key="cat">
-                    <span :class="getBadgeClass(cat)" class="text-[11px] px-2 py-0.5 rounded font-medium border" x-text="cat"></span>
-                  </template>
-                  <template x-if="!item.categories || item.categories.length === 0">
-                    <span class="text-[11px] px-2 py-0.5 rounded font-medium border bg-amber-500/15 text-amber-300 border-amber-500/30">Quarantine</span>
-                  </template>
-                </div>
-
-                <!-- Plan Pending State (when !item.container) -->
-                <template x-if="!item.container">
-                  <div class="pt-2 border-t border-slate-800/80">
-                    <span class="px-2 py-0.5 rounded text-[10px] font-medium bg-cyan-950 text-cyan-400 border border-cyan-800/60 animate-pulse">Plan Generating...</span>
-                  </div>
-                </template>
-
-                <!-- Plan Hydrated State (when item.container is present) -->
-                <template x-if="item.container">
-                  <div class="space-y-2">
-                    <!-- Container Snippet -->
-                    <div class="text-xs text-slate-300 flex items-start gap-2 pt-1 border-t border-slate-800/80">
-                      <span class="text-sm shrink-0">🛢️</span>
-                      <span class="line-clamp-2 leading-relaxed" x-text="item.container"></span>
+        <!-- View Mode 1: 3-Column Physical Segregation Card Grid -->
+        <template x-if="activeViewMode === 'grid'">
+          <div class="space-y-4">
+            <template x-if="filteredItems.length === 0">
+              <div class="py-12 text-center text-xs text-slate-400 italic bg-slate-900/40 rounded-xl border border-dashed border-slate-800">
+                <span>No chemicals match current search query or hazard filters.</span>
+              </div>
+            </template>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              <template x-for="item in filteredItems" :key="item.chemical">
+                <div :class="item.review_required ? 'border-amber-500/50 bg-amber-950/15 ring-1 ring-amber-500/30' : 'border-slate-800 bg-slate-900/90'"
+                     class="rounded-xl border p-5 shadow-lg flex flex-col justify-between transition hover:border-slate-700 space-y-4">
+                  <div class="space-y-3">
+                    <!-- Card Header -->
+                    <div class="flex items-start justify-between gap-2">
+                      <h3 class="text-base font-bold text-white tracking-tight" x-text="item.chemical"></h3>
+                      <template x-if="item.review_required">
+                        <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 whitespace-nowrap">
+                          Review Required
+                        </span>
+                      </template>
                     </div>
 
-                    <!-- Segregation Note -->
-                    <div class="text-xs text-slate-400 flex items-start gap-2">
-                      <span class="text-sm shrink-0">🔒</span>
-                      <span class="line-clamp-2 leading-relaxed" x-text="item.segregation"></span>
+                    <!-- Segregation Bin Badge -->
+                    <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-800 text-slate-200 border border-slate-700">
+                      <span>🗄️</span>
+                      <span x-text="item.bin"></span>
                     </div>
-                  </div>
-                </template>
-              </div>
 
-              <!-- Action Button -->
-              <div class="pt-3 border-t border-slate-800/80">
-                <button @click="openDossier(item)"
-                        class="w-full py-2 px-3 bg-slate-800 hover:bg-emerald-600 text-slate-200 hover:text-white rounded-lg text-xs font-medium transition text-center flex items-center justify-center gap-1">
-                  <span x-text="item.container ? 'View Full Plan →' : 'Inspect Badges →'">View Full Plan →</span>
-                </button>
-              </div>
+                    <!-- Hazard Category Badges -->
+                    <div class="flex flex-wrap gap-1">
+                      <template x-for="cat in item.categories" :key="cat">
+                        <span :class="getBadgeClass(cat)" class="text-[11px] px-2 py-0.5 rounded font-medium border" x-text="cat"></span>
+                      </template>
+                      <template x-if="!item.categories || item.categories.length === 0">
+                        <span class="text-[11px] px-2 py-0.5 rounded font-medium border bg-amber-500/15 text-amber-300 border-amber-500/30">Quarantine</span>
+                      </template>
+                    </div>
+
+                    <!-- Plan Pending State (when !item.container) -->
+                    <template x-if="!item.container">
+                      <div class="pt-2 border-t border-slate-800/80">
+                        <span class="px-2 py-0.5 rounded text-[10px] font-medium bg-cyan-950 text-cyan-400 border border-cyan-800/60 animate-pulse">Plan Generating...</span>
+                      </div>
+                    </template>
+
+                    <!-- Plan Hydrated State (when item.container is present) -->
+                    <template x-if="item.container">
+                      <div class="space-y-2">
+                        <!-- Container Snippet -->
+                        <div class="text-xs text-slate-300 flex items-start gap-2 pt-1 border-t border-slate-800/80">
+                          <span class="text-sm shrink-0">🛢️</span>
+                          <span class="line-clamp-2 leading-relaxed" x-text="item.container"></span>
+                        </div>
+
+                        <!-- Segregation Note -->
+                        <div class="text-xs text-slate-400 flex items-start gap-2">
+                          <span class="text-sm shrink-0">🔒</span>
+                          <span class="line-clamp-2 leading-relaxed" x-text="item.segregation"></span>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+
+                  <!-- Action Button -->
+                  <div class="pt-3 border-t border-slate-800/80">
+                    <button @click="openDossier(item)"
+                            class="w-full py-2 px-3 bg-slate-800 hover:bg-emerald-600 text-slate-200 hover:text-white rounded-lg text-xs font-medium transition text-center flex items-center justify-center gap-1">
+                      <span x-text="item.container ? 'View Full Plan →' : 'Inspect Badges →'">View Full Plan →</span>
+                    </button>
+                  </div>
+                </div>
+              </template>
             </div>
-          </template>
-        </div>
+          </div>
+        </template>
+
+        <!-- View Mode 2: Grouped Physical Cabinet Swimlanes with Collapsible Accordions -->
+        <template x-if="activeViewMode === 'swimlanes'">
+          <div class="space-y-6">
+            <!-- Master Toggle Bar -->
+            <div class="flex items-center justify-between px-1">
+              <div class="text-xs font-mono text-slate-400 flex items-center gap-2">
+                <span>Physical Containment Zones &amp; Secondary Containment Cabinets</span>
+              </div>
+              <button type="button"
+                      @click="toggleAllZones(!areAllZonesExpanded())"
+                      class="px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-medium transition flex items-center gap-1.5">
+                <span x-text="areAllZonesExpanded() ? '▲ Collapse All Cabinets' : '▼ Expand All Cabinets'"></span>
+              </button>
+            </div>
+
+            <!-- Loop 6 Containment Zones in Swimlane View -->
+            <template x-for="zone in cabinetZones" :key="zone.id">
+              <div class="rounded-xl border overflow-hidden transition"
+                   :class="[zone.themeBorder, zone.themeBg]">
+                <!-- Accordion Header -->
+                <button type="button"
+                        @click="toggleZone(zone.id)"
+                        class="w-full px-5 py-4 flex items-center justify-between text-left transition border-b"
+                        :class="zone.themeHeader">
+                  <div class="flex items-center gap-3">
+                    <span class="text-xl shrink-0" x-text="zone.icon"></span>
+                    <div>
+                      <div class="flex items-center gap-2.5">
+                        <span class="font-bold text-sm tracking-tight text-white" x-text="zone.title"></span>
+                        <span class="px-2 py-0.5 rounded-full text-[11px] font-mono font-bold border"
+                              :class="zone.badgeBg"
+                              x-text="zone.items.length + ' chemical' + (zone.items.length === 1 ? '' : 's')"></span>
+                      </div>
+                      <p class="text-xs text-slate-400 mt-0.5 line-clamp-1" x-text="zone.containmentRule"></p>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2 shrink-0 ml-4">
+                    <span class="text-xs font-mono font-bold" x-text="expandedZones[zone.id] ? '▲' : '▼'"></span>
+                  </div>
+                </button>
+
+                <!-- Collapsible Body -->
+                <div x-show="expandedZones[zone.id]" x-transition class="p-5">
+                  <!-- Empty Zone Placeholder -->
+                  <template x-if="zone.items.length === 0">
+                    <div class="py-8 text-center text-xs text-slate-400 italic bg-slate-900/40 rounded-lg border border-dashed border-slate-800/80">
+                      <span>No chemicals in this containment zone match current filters</span>
+                    </div>
+                  </template>
+
+                  <!-- 3-Column Card Grid of items in that cabinet -->
+                  <template x-if="zone.items.length > 0">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                      <template x-for="item in zone.items" :key="item.chemical">
+                        <div :class="item.review_required ? 'border-amber-500/50 bg-amber-950/15 ring-1 ring-amber-500/30' : 'border-slate-800 bg-slate-900/90'"
+                             class="rounded-xl border p-5 shadow-lg flex flex-col justify-between transition hover:border-slate-700 space-y-4">
+                          <div class="space-y-3">
+                            <!-- Card Header -->
+                            <div class="flex items-start justify-between gap-2">
+                              <h3 class="text-base font-bold text-white tracking-tight" x-text="item.chemical"></h3>
+                              <template x-if="item.review_required">
+                                <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 whitespace-nowrap">
+                                  Review Required
+                                </span>
+                              </template>
+                            </div>
+
+                            <!-- Segregation Bin Badge -->
+                            <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-800 text-slate-200 border border-slate-700">
+                              <span>🗄️</span>
+                              <span x-text="item.bin"></span>
+                            </div>
+
+                            <!-- Hazard Category Badges -->
+                            <div class="flex flex-wrap gap-1">
+                              <template x-for="cat in item.categories" :key="cat">
+                                <span :class="getBadgeClass(cat)" class="text-[11px] px-2 py-0.5 rounded font-medium border" x-text="cat"></span>
+                              </template>
+                              <template x-if="!item.categories || item.categories.length === 0">
+                                <span class="text-[11px] px-2 py-0.5 rounded font-medium border bg-amber-500/15 text-amber-300 border-amber-500/30">Quarantine</span>
+                              </template>
+                            </div>
+
+                            <!-- Plan Pending State (when !item.container) -->
+                            <template x-if="!item.container">
+                              <div class="pt-2 border-t border-slate-800/80">
+                                <span class="px-2 py-0.5 rounded text-[10px] font-medium bg-cyan-950 text-cyan-400 border border-cyan-800/60 animate-pulse">Plan Generating...</span>
+                              </div>
+                            </template>
+
+                            <!-- Plan Hydrated State (when item.container is present) -->
+                            <template x-if="item.container">
+                              <div class="space-y-2">
+                                <!-- Container Snippet -->
+                                <div class="text-xs text-slate-300 flex items-start gap-2 pt-1 border-t border-slate-800/80">
+                                  <span class="text-sm shrink-0">🛢️</span>
+                                  <span class="line-clamp-2 leading-relaxed" x-text="item.container"></span>
+                                </div>
+
+                                <!-- Segregation Note -->
+                                <div class="text-xs text-slate-400 flex items-start gap-2">
+                                  <span class="text-sm shrink-0">🔒</span>
+                                  <span class="line-clamp-2 leading-relaxed" x-text="item.segregation"></span>
+                                </div>
+                              </div>
+                            </template>
+                          </div>
+
+                          <!-- Action Button -->
+                          <div class="pt-3 border-t border-slate-800/80">
+                            <button @click="openDossier(item)"
+                                    class="w-full py-2 px-3 bg-slate-800 hover:bg-emerald-600 text-slate-200 hover:text-white rounded-lg text-xs font-medium transition text-center flex items-center justify-center gap-1">
+                              <span x-text="item.container ? 'View Full Plan →' : 'Inspect Badges →'">View Full Plan →</span>
+                            </button>
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </template>
+          </div>
+        </template>
       </div>
     </template>
 
@@ -715,6 +869,108 @@
         eventSource: null,
         batchSearchQuery: '',
         activeHazardFilters: [],
+        activeViewMode: 'grid',
+        expandedZones: {
+          flammable: true,
+          acids: true,
+          bases: true,
+          toxic: true,
+          biohazard: true,
+          review: true
+        },
+
+        toggleZone(zoneId) {
+          this.expandedZones[zoneId] = !this.expandedZones[zoneId];
+        },
+
+        toggleAllZones(expand) {
+          const target = (expand !== undefined) ? expand : !this.areAllZonesExpanded();
+          for (const k in this.expandedZones) {
+            this.expandedZones[k] = target;
+          }
+        },
+
+        areAllZonesExpanded() {
+          return Object.values(this.expandedZones).every(Boolean);
+        },
+
+        get cabinetZones() {
+          const items = this.filteredItems || [];
+          return [
+            {
+              id: 'flammable',
+              title: 'Flammable Solvents Cabinet',
+              binName: 'Flammable Solvents',
+              containmentRule: 'Store in dedicated FM-approved flame-resistant cabinet. Bond & ground containers during transfer. Segregate from oxidizers and inorganic acids.',
+              themeBorder: 'border-orange-500/30',
+              themeBg: 'bg-orange-950/15',
+              themeHeader: 'bg-orange-950/40 text-orange-300 border-orange-500/40',
+              badgeBg: 'bg-orange-500/20 text-orange-200 border-orange-500/40',
+              icon: '🗄️',
+              items: items.filter(i => (i.segregation_bin || i.bin) === 'Flammable Solvents')
+            },
+            {
+              id: 'acids',
+              title: 'Inorganic Acid Storage',
+              binName: 'Inorganic Acids',
+              containmentRule: 'Store in dedicated non-metallic / epoxy-coated acid cabinet with secondary containment tubs. Strictly segregate nitric acid from organic solvents.',
+              themeBorder: 'border-purple-500/30',
+              themeBg: 'bg-purple-950/15',
+              themeHeader: 'bg-purple-950/40 text-purple-300 border-purple-500/40',
+              badgeBg: 'bg-purple-500/20 text-purple-200 border-purple-500/40',
+              icon: '🧪',
+              items: items.filter(i => (i.segregation_bin || i.bin) === 'Inorganic Acids')
+            },
+            {
+              id: 'bases',
+              title: 'Inorganic Base Storage',
+              binName: 'Inorganic Bases',
+              containmentRule: 'Store in corrosion-proof alkali cabinet separated from acid containment. Use polypropylene secondary containment trays.',
+              themeBorder: 'border-cyan-500/30',
+              themeBg: 'bg-cyan-950/15',
+              themeHeader: 'bg-cyan-950/40 text-cyan-300 border-cyan-500/40',
+              badgeBg: 'bg-cyan-500/20 text-cyan-200 border-cyan-500/40',
+              icon: '🧪',
+              items: items.filter(i => (i.segregation_bin || i.bin) === 'Inorganic Bases')
+            },
+            {
+              id: 'toxic',
+              title: 'Carcinogenic & Toxic Organics Cabinet',
+              binName: 'Carcinogenic & Toxic Organics',
+              containmentRule: 'Store in ventilated toxic cabinet under negative pressure. Maintain double containment and strict manifest tracking.',
+              themeBorder: 'border-pink-500/30',
+              themeBg: 'bg-pink-950/15',
+              themeHeader: 'bg-pink-950/40 text-pink-300 border-pink-500/40',
+              badgeBg: 'bg-pink-500/20 text-pink-200 border-pink-500/40',
+              icon: '☠️',
+              items: items.filter(i => (i.segregation_bin || i.bin) === 'Carcinogenic & Toxic Organics')
+            },
+            {
+              id: 'biohazard',
+              title: 'Biohazard & Infectious Holding',
+              binName: 'Biohazard & Infectious',
+              containmentRule: 'Store in leak-proof rigid autoclave-rated biohazard containers with biosafety level containment. Hold for authorized thermal deactivation.',
+              themeBorder: 'border-yellow-500/30',
+              themeBg: 'bg-yellow-950/15',
+              themeHeader: 'bg-yellow-950/40 text-yellow-300 border-yellow-500/40',
+              badgeBg: 'bg-yellow-500/20 text-yellow-200 border-yellow-500/40',
+              icon: '☣️',
+              items: items.filter(i => (i.segregation_bin || i.bin) === 'Biohazard & Infectious')
+            },
+            {
+              id: 'review',
+              title: 'Safety Review Queue',
+              binName: 'Review Queue',
+              containmentRule: 'Hold in designated laboratory quarantine bench. Strictly prohibited to co-mingle or drain-dispose pending certified EHS characterization.',
+              themeBorder: 'border-amber-500/40',
+              themeBg: 'bg-amber-950/20',
+              themeHeader: 'bg-amber-950/50 text-amber-300 border-amber-500/50',
+              badgeBg: 'bg-amber-500/20 text-amber-200 border-amber-500/40',
+              icon: '⚠️',
+              items: items.filter(i => (i.segregation_bin || i.bin) === 'Review Queue' || i.review_required)
+            }
+          ];
+        },
 
         get hazardCounts() {
           if (!this.activeBatch || !this.activeBatch.items) return { All: 0, Flammable: 0, Toxic: 0, Corrosive: 0, Infectious: 0, Carcinogenic: 0, 'Review Required': 0 };
