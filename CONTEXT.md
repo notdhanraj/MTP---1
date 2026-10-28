@@ -60,6 +60,14 @@ _Avoid_: Waste destruction, neutralization recipe, disposal treatment
 The authorized route for legal destruction, secure landfilling, or permanent disposition of hazardous waste via licensed external treatment, storage, and disposal facilities.
 _Avoid_: Dumping, drain disposal, waste elimination
 
+**Batch Run**:
+An execution instance representing the ingestion of an external laboratory chemical inventory workbook, producing de-duplicated chemical records, physical segregation bin allocations, and unified compliance dossiers.
+_Avoid_: Job, process, pipeline run, task execution
+
+**Review Queue**:
+A segregated holding category for chemicals whose hazard classification or management plan requires human verification due to ambiguous naming, novel formulations, or evaluation failure.
+_Avoid_: Error list, quarantine bin, failed tasks
+
 ### Regulatory Standards
 
 **RCRA Framework**:
