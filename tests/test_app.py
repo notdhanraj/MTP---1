@@ -75,6 +75,16 @@ class TestApp(unittest.TestCase):
         self.assertIn('grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3', html)
         self.assertIn('View Full Plan →', html)
 
+    def test_template_contains_sse_stepper_and_pause_checkbox(self):
+        response = self.client.get('/')
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+        self.assertIn('pauseAfterClassification', html)
+        self.assertIn('streamActive', html)
+        self.assertIn('streamProgress', html)
+        self.assertIn('Proceed to Plan Generation', html)
+        self.assertIn('EventSource', html)
+
     def test_lookup_endpoint_success(self):
         import src.services as services
         fake = FakeClient()

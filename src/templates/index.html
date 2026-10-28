@@ -132,6 +132,58 @@
           </div>
         </div>
 
+        <!-- Multi-Stage Progress Stepper Banner -->
+        <div x-show="streamActive || streamPaused || streamStage === 'completed'"
+             class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+          <div class="flex items-center justify-between gap-4">
+            <div class="flex items-center gap-2.5">
+              <div :class="streamActive ? 'animate-spin' : ''" class="w-4 h-4 rounded-full border-2 border-emerald-400 border-t-transparent shrink-0"></div>
+              <span class="text-xs font-mono font-medium text-slate-200" x-text="streamMessage || 'Processing batch...'"></span>
+            </div>
+            <span class="text-xs font-mono font-bold text-emerald-400" x-text="streamProgress + '%'"></span>
+          </div>
+
+          <!-- Progress Bar -->
+          <div class="h-2 rounded-full bg-slate-800 overflow-hidden">
+            <div class="h-full bg-gradient-to-r from-emerald-500 to-cyan-500 transition-all duration-300" :style="'width: ' + streamProgress + '%'"></div>
+          </div>
+
+          <!-- 4 Stage Pill Indicators -->
+          <div class="flex items-center gap-2 flex-wrap pt-1">
+            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-emerald-950/60 text-emerald-400 border border-emerald-800/60">
+              <span class="font-bold">✓</span> 1. Ingestion
+            </span>
+
+            <span :class="(streamStage === 'planning' || streamStage === 'completed' || streamPaused || streamProgress >= 50) ? 'bg-emerald-950/60 text-emerald-400 border-emerald-800/60' : (streamStage === 'classification' ? 'bg-cyan-950/80 text-cyan-300 border-cyan-700 animate-pulse' : 'bg-slate-800 text-slate-400 border-slate-700')"
+                  class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium border transition-colors">
+              <span class="font-bold" x-text="(streamStage === 'planning' || streamStage === 'completed' || streamPaused || streamProgress >= 50) ? '✓' : (streamStage === 'classification' ? '⏳' : '•')"></span>
+              <span>2. Classification</span>
+            </span>
+
+            <span :class="streamStage === 'completed' ? 'bg-emerald-950/60 text-emerald-400 border-emerald-800/60' : (streamStage === 'planning' ? 'bg-cyan-950/80 text-cyan-300 border-cyan-700 animate-pulse' : (streamPaused ? 'bg-amber-950/60 text-amber-300 border-amber-700/80' : 'bg-slate-800 text-slate-400 border-slate-700'))"
+                  class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium border transition-colors">
+              <span class="font-bold" x-text="streamStage === 'completed' ? '✓' : (streamStage === 'planning' ? '⏳' : (streamPaused ? '⏸' : '•'))"></span>
+              <span>3. Planning</span>
+            </span>
+
+            <span :class="streamStage === 'completed' ? 'bg-emerald-950/60 text-emerald-400 border-emerald-800/60' : 'bg-slate-800 text-slate-400 border-slate-700'"
+                  class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium border transition-colors">
+              <span class="font-bold" x-text="streamStage === 'completed' ? '✓' : '•'"></span>
+              <span>4. Segregated</span>
+            </span>
+          </div>
+
+          <!-- Amber Alert Banner when streamPaused -->
+          <div x-show="streamPaused" class="mt-3 p-3 rounded-lg bg-amber-950/40 border border-amber-500/40 flex items-center justify-between">
+            <div class="flex items-center gap-2 text-amber-300 text-xs font-medium">
+              <span>⚠️ Classification complete. Review hazard badges below before generating plans.</span>
+            </div>
+            <button @click="resumePlanning()" class="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold shadow-md transition-colors">
+              Proceed to Plan Generation →
+            </button>
+          </div>
+        </div>
+
         <!-- 3-Column Physical Segregation Card Grid -->
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           <template x-for="item in activeBatch.items" :key="item.chemical">
@@ -164,24 +216,36 @@
                   </template>
                 </div>
 
-                <!-- Container Snippet -->
-                <div class="text-xs text-slate-300 flex items-start gap-2 pt-1 border-t border-slate-800/80">
-                  <span class="text-sm shrink-0">🛢️</span>
-                  <span class="line-clamp-2 leading-relaxed" x-text="item.container"></span>
-                </div>
+                <!-- Plan Pending State (when !item.container) -->
+                <template x-if="!item.container">
+                  <div class="pt-2 border-t border-slate-800/80">
+                    <span class="px-2 py-0.5 rounded text-[10px] font-medium bg-cyan-950 text-cyan-400 border border-cyan-800/60 animate-pulse">Plan Generating...</span>
+                  </div>
+                </template>
 
-                <!-- Segregation Note -->
-                <div class="text-xs text-slate-400 flex items-start gap-2">
-                  <span class="text-sm shrink-0">🔒</span>
-                  <span class="line-clamp-2 leading-relaxed" x-text="item.segregation"></span>
-                </div>
+                <!-- Plan Hydrated State (when item.container is present) -->
+                <template x-if="item.container">
+                  <div class="space-y-2">
+                    <!-- Container Snippet -->
+                    <div class="text-xs text-slate-300 flex items-start gap-2 pt-1 border-t border-slate-800/80">
+                      <span class="text-sm shrink-0">🛢️</span>
+                      <span class="line-clamp-2 leading-relaxed" x-text="item.container"></span>
+                    </div>
+
+                    <!-- Segregation Note -->
+                    <div class="text-xs text-slate-400 flex items-start gap-2">
+                      <span class="text-sm shrink-0">🔒</span>
+                      <span class="line-clamp-2 leading-relaxed" x-text="item.segregation"></span>
+                    </div>
+                  </div>
+                </template>
               </div>
 
               <!-- Action Button -->
               <div class="pt-3 border-t border-slate-800/80">
                 <button @click="openDossier(item)"
                         class="w-full py-2 px-3 bg-slate-800 hover:bg-emerald-600 text-slate-200 hover:text-white rounded-lg text-xs font-medium transition text-center flex items-center justify-center gap-1">
-                  <span>View Full Plan →</span>
+                  <span x-text="item.container ? 'View Full Plan →' : 'Inspect Badges →'">View Full Plan →</span>
                 </button>
               </div>
             </div>
@@ -325,6 +389,14 @@
               <span>Physical Segregation</span>
             </div>
           </div>
+
+          <div class="mt-4 p-3 rounded-lg bg-slate-900/60 border border-slate-700/60 flex items-start gap-3">
+            <input type="checkbox" id="pauseAfterClassification" x-model="pauseAfterClassification" class="mt-1 h-4 w-4 rounded border-slate-700 bg-slate-800 text-emerald-500 focus:ring-emerald-500/20">
+            <label for="pauseAfterClassification" class="text-xs text-slate-300">
+              <span class="font-semibold text-slate-200 block">Pause for classification review before generating detailed plans</span>
+              Inspect assigned hazard badges and storage bins before synthesizing 14-field compliance dossiers.
+            </label>
+          </div>
         </div>
 
         <!-- In-flight spinner showing "Evaluating chemical inventory & generating compliance plans..." while isUploading is true -->
@@ -375,6 +447,12 @@
       <div class="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
         <template x-if="activeDossier">
           <div>
+            <!-- Storage Bin Badge in Drawer -->
+            <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-800 text-slate-200 border border-slate-700 mb-3">
+              <span>🗄️</span>
+              <span x-text="activeDossier.bin || 'Storage Bin Pending'"></span>
+            </div>
+
             <!-- Review Queue Banner in Drawer if review_required -->
             <template x-if="activeDossier.review_required">
               <div class="mb-4 p-3.5 bg-amber-950/60 border border-amber-800 rounded-xl text-amber-200 shadow-sm">
@@ -394,80 +472,122 @@
 
             <!-- Tab 1: Safety & Handling -->
             <div x-show="activeTab === 'safety'" class="space-y-4">
-              <div class="p-3.5 bg-red-950/50 border border-red-800 rounded-xl text-red-200 shadow-sm">
-                <div class="font-bold text-red-300 flex items-center gap-1.5 text-xs mb-1">
-                  <span>⛔</span> STRICTLY PROHIBITED ACTIONS
+              <template x-if="!activeDossier.container">
+                <div class="p-4 rounded-xl bg-slate-900 border border-cyan-800/40 text-center space-y-2">
+                  <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-medium bg-cyan-950 text-cyan-400 border border-cyan-800/60">
+                    Plan Generation Pending
+                  </div>
+                  <p class="text-xs text-slate-300 italic">
+                    Plan generation pending. Resume batch processing above to synthesize complete management protocols.
+                  </p>
                 </div>
-                <p class="leading-relaxed text-[11px]" x-text="activeDossier.prohibited"></p>
-              </div>
+              </template>
+              <template x-if="activeDossier.container">
+                <div class="space-y-4">
+                  <div class="p-3.5 bg-red-950/50 border border-red-800 rounded-xl text-red-200 shadow-sm">
+                    <div class="font-bold text-red-300 flex items-center gap-1.5 text-xs mb-1">
+                      <span>⛔</span> STRICTLY PROHIBITED ACTIONS
+                    </div>
+                    <p class="leading-relaxed text-[11px]" x-text="activeDossier.prohibited"></p>
+                  </div>
 
-              <div class="grid grid-cols-2 gap-3">
-                <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-                  <div class="text-slate-400 font-mono text-[10px] uppercase">Recommended Container</div>
-                  <div class="text-slate-200 mt-1 font-semibold text-xs" x-text="activeDossier.container"></div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                      <div class="text-slate-400 font-mono text-[10px] uppercase">Recommended Container</div>
+                      <div class="text-slate-200 mt-1 font-semibold text-xs" x-text="activeDossier.container"></div>
+                    </div>
+                    <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                      <div class="text-slate-400 font-mono text-[10px] uppercase">Storage Protocol</div>
+                      <div class="text-slate-200 mt-1 text-xs" x-text="activeDossier.storage"></div>
+                    </div>
+                  </div>
+
+                  <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                    <div class="text-slate-400 font-mono text-[10px] uppercase">Handling & Personal Protective Equipment (PPE)</div>
+                    <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.ppe"></div>
+                  </div>
+
+                  <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                    <div class="text-slate-400 font-mono text-[10px] uppercase">Segregation & Incompatibilities</div>
+                    <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.segregation"></div>
+                  </div>
+
+                  <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                    <div class="text-slate-400 font-mono text-[10px] uppercase">Container Labeling Requirements</div>
+                    <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.labeling"></div>
+                  </div>
                 </div>
-                <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-                  <div class="text-slate-400 font-mono text-[10px] uppercase">Storage Protocol</div>
-                  <div class="text-slate-200 mt-1 text-xs" x-text="activeDossier.storage"></div>
-                </div>
-              </div>
-
-              <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-                <div class="text-slate-400 font-mono text-[10px] uppercase">Handling & Personal Protective Equipment (PPE)</div>
-                <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.ppe"></div>
-              </div>
-
-              <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-                <div class="text-slate-400 font-mono text-[10px] uppercase">Segregation & Incompatibilities</div>
-                <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.segregation"></div>
-              </div>
-
-              <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-                <div class="text-slate-400 font-mono text-[10px] uppercase">Container Labeling Requirements</div>
-                <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.labeling"></div>
-              </div>
+              </template>
             </div>
 
             <!-- Tab 2: Spill & Emergency -->
             <div x-show="activeTab === 'emergency'" class="space-y-4">
-              <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-                <div class="text-slate-400 font-mono text-[10px] uppercase">Spill & Emergency Procedures</div>
-                <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.spill"></div>
-              </div>
-              <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-                <div class="text-slate-400 font-mono text-[10px] uppercase">Identification & Characterization</div>
-                <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.identification"></div>
-              </div>
+              <template x-if="!activeDossier.container">
+                <div class="p-4 rounded-xl bg-slate-900 border border-cyan-800/40 text-center space-y-2">
+                  <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-medium bg-cyan-950 text-cyan-400 border border-cyan-800/60">
+                    Plan Generation Pending
+                  </div>
+                  <p class="text-xs text-slate-300 italic">
+                    Plan generation pending. Resume batch processing above to synthesize complete management protocols.
+                  </p>
+                </div>
+              </template>
+              <template x-if="activeDossier.container">
+                <div class="space-y-4">
+                  <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                    <div class="text-slate-400 font-mono text-[10px] uppercase">Spill & Emergency Procedures</div>
+                    <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.spill"></div>
+                  </div>
+                  <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                    <div class="text-slate-400 font-mono text-[10px] uppercase">Identification & Characterization</div>
+                    <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.identification"></div>
+                  </div>
+                </div>
+              </template>
             </div>
 
             <!-- Tab 3: Regulatory Compliance -->
             <div x-show="activeTab === 'regulatory'" class="space-y-4">
-              <div class="p-3.5 bg-amber-950/50 border border-amber-800 rounded-xl text-amber-200 shadow-sm">
-                <div class="font-bold text-amber-300 flex items-center gap-1.5 text-xs mb-1">
-                  <span>📋</span> MANDATORY INSTITUTIONAL VERIFICATION
+              <template x-if="!activeDossier.container">
+                <div class="p-4 rounded-xl bg-slate-900 border border-cyan-800/40 text-center space-y-2">
+                  <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-medium bg-cyan-950 text-cyan-400 border border-cyan-800/60">
+                    Plan Generation Pending
+                  </div>
+                  <p class="text-xs text-slate-300 italic">
+                    Plan generation pending. Resume batch processing above to synthesize complete management protocols.
+                  </p>
                 </div>
-                <p class="leading-relaxed text-[11px]" x-text="activeDossier.verification"></p>
-              </div>
+              </template>
+              <template x-if="activeDossier.container">
+                <div class="space-y-4">
+                  <div class="p-3.5 bg-amber-950/50 border border-amber-800 rounded-xl text-amber-200 shadow-sm">
+                    <div class="font-bold text-amber-300 flex items-center gap-1.5 text-xs mb-1">
+                      <span>📋</span> MANDATORY INSTITUTIONAL VERIFICATION
+                    </div>
+                    <p class="leading-relaxed text-[11px]" x-text="activeDossier.verification"></p>
+                  </div>
 
-              <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-                <div class="text-slate-400 font-mono text-[10px] uppercase">USEPA / RCRA Regulatory Framework (40 CFR Part 261)</div>
-                <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.usepa"></div>
-              </div>
+                  <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                    <div class="text-slate-400 font-mono text-[10px] uppercase">USEPA / RCRA Regulatory Framework (40 CFR Part 261)</div>
+                    <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.usepa"></div>
+                  </div>
 
-              <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-                <div class="text-slate-400 font-mono text-[10px] uppercase">Indian HOWM Rules, 2016 (CPCB / SPCB Schedule)</div>
-                <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.india"></div>
-              </div>
+                  <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                    <div class="text-slate-400 font-mono text-[10px] uppercase">Indian HOWM Rules, 2016 (CPCB / SPCB Schedule)</div>
+                    <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.india"></div>
+                  </div>
 
-              <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-                <div class="text-slate-400 font-mono text-[10px] uppercase">Treatment Framework (Pre-Disposal)</div>
-                <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.treatment"></div>
-              </div>
+                  <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                    <div class="text-slate-400 font-mono text-[10px] uppercase">Treatment Framework (Pre-Disposal)</div>
+                    <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.treatment"></div>
+                  </div>
 
-              <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-                <div class="text-slate-400 font-mono text-[10px] uppercase">Authorized TSDF & Final Disposal</div>
-                <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.disposal"></div>
-              </div>
+                  <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                    <div class="text-slate-400 font-mono text-[10px] uppercase">Authorized TSDF & Final Disposal</div>
+                    <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.disposal"></div>
+                  </div>
+                </div>
+              </template>
             </div>
           </div>
         </template>
@@ -484,10 +604,19 @@
         drawerOpen: false,
         activeTab: 'safety',
         uploadModalOpen: false,
+        get showUploadModal() { return this.uploadModalOpen; },
+        set showUploadModal(val) { this.uploadModalOpen = val; },
         isUploading: false,
         uploadError: null,
         activeBatch: null,
         isDragging: false,
+        pauseAfterClassification: false,
+        streamActive: false,
+        streamPaused: false,
+        streamProgress: 0,
+        streamMessage: '',
+        streamStage: 'idle',
+        eventSource: null,
 
         async performLookup() {
           const query = this.searchQuery.trim();
@@ -548,6 +677,7 @@
           try {
             const formData = new FormData();
             formData.append('file', file);
+            formData.append('pause_after_classification', this.pauseAfterClassification.toString());
 
             const resp = await fetch('/api/upload', {
               method: 'POST',
@@ -560,13 +690,161 @@
               throw new Error(data.detail || `Upload failed with status ${resp.status}`);
             }
 
-            this.activeBatch = data;
-            this.uploadModalOpen = false;
+            if (data.run_id) {
+              this.uploadModalOpen = false;
+              this.activeBatch = {
+                run_id: data.run_id,
+                filename: data.filename,
+                total_count: data.total_count,
+                bin_counts: {
+                  "Flammable Solvents": 0,
+                  "Inorganic Acids": 0,
+                  "Inorganic Bases": 0,
+                  "Carcinogenic & Toxic Organics": 0,
+                  "Biohazard & Infectious": 0,
+                  "Review Queue": 0
+                },
+                items: []
+              };
+              this.startStream(data.run_id);
+            } else {
+              this.activeBatch = data;
+              this.uploadModalOpen = false;
+            }
           } catch (err) {
             this.uploadError = err.message || 'An error occurred during file upload.';
           } finally {
             this.isUploading = false;
           }
+        },
+
+        uploadBatch(file) {
+          return this.uploadFile(file);
+        },
+
+        startStream(runId, stage = null) {
+          if (this.eventSource) {
+            this.eventSource.close();
+            this.eventSource = null;
+          }
+
+          const streamUrl = '/api/runs/' + runId + '/stream' + (stage ? '?stage=' + encodeURIComponent(stage) : '');
+          this.eventSource = new EventSource(streamUrl);
+          this.streamActive = true;
+          this.streamPaused = false;
+
+          this.eventSource.onmessage = (event) => {
+            try {
+              const msg = JSON.parse(event.data);
+
+              if (msg.type === 'stage_start') {
+                this.streamStage = msg.stage;
+                this.streamMessage = 'Starting ' + msg.stage + '...';
+              } else if (msg.type === 'item_progress') {
+                if (msg.stage === 'classification') {
+                  this.streamProgress = Math.round((msg.index / msg.total) * 50);
+                  this.streamMessage = 'Classifying [' + msg.index + '/' + msg.total + ']: ' + msg.chemical + ' (' + msg.bin + ')...';
+
+                  const existingIdx = this.activeBatch.items.findIndex(i => i.chemical.toLowerCase() === msg.chemical.toLowerCase());
+                  const itemObj = {
+                    chemical: msg.chemical,
+                    bin: msg.bin,
+                    categories: [
+                      msg.classification?.flammable ? 'Flammable' : null,
+                      msg.classification?.toxic ? 'Toxic' : null,
+                      msg.classification?.corrosive ? 'Corrosive' : null,
+                      msg.classification?.carcinogenic ? 'Carcinogenic' : null,
+                      msg.classification?.infectious ? 'Infectious' : null,
+                    ].filter(Boolean),
+                    flammable: msg.classification ? msg.classification.flammable : false,
+                    carcinogenic: msg.classification ? msg.classification.carcinogenic : false,
+                    infectious: msg.classification ? msg.classification.infectious : false,
+                    toxic: msg.classification ? msg.classification.toxic : false,
+                    corrosive: msg.classification ? msg.classification.corrosive : false,
+                    segregation_bin: msg.bin,
+                    review_required: (msg.bin === 'Review Queue'),
+                    review_reason: (msg.bin === 'Review Queue' ? 'Classification requires review' : null),
+                    container: null, // Indicates plan pending
+                    identification: null,
+                    segregation: null,
+                    disposal: null
+                  };
+
+                  if (existingIdx >= 0) {
+                    this.activeBatch.items[existingIdx] = Object.assign({}, this.activeBatch.items[existingIdx], itemObj);
+                  } else {
+                    this.activeBatch.items.push(itemObj);
+                  }
+
+                  if (this.activeBatch.bin_counts) {
+                    this.activeBatch.bin_counts[msg.bin] = (this.activeBatch.bin_counts[msg.bin] || 0) + 1;
+                  }
+                } else if (msg.stage === 'planning') {
+                  this.streamProgress = 50 + Math.round((msg.index / msg.total) * 50);
+                  this.streamMessage = 'Generating plan [' + msg.index + '/' + msg.total + ']: ' + msg.chemical + '...';
+
+                  const existingIdx = this.activeBatch.items.findIndex(i => i.chemical.toLowerCase() === msg.chemical.toLowerCase());
+                  if (existingIdx >= 0) {
+                    this.activeBatch.items[existingIdx] = Object.assign({}, this.activeBatch.items[existingIdx], msg.dossier);
+                  } else {
+                    this.activeBatch.items.push(msg.dossier);
+                  }
+                }
+              } else if (msg.type === 'stage_complete') {
+                if (msg.stage === 'classification' && msg.bin_counts) {
+                  this.activeBatch.bin_counts = msg.bin_counts;
+                }
+              } else if (msg.type === 'stage_paused') {
+                this.streamPaused = true;
+                this.streamActive = false;
+                this.streamProgress = 50;
+                this.streamMessage = 'Classification complete for ' + msg.total + ' chemicals. Paused for review.';
+                if (this.eventSource) {
+                  this.eventSource.close();
+                  this.eventSource = null;
+                }
+              } else if (msg.type === 'complete') {
+                this.streamProgress = 100;
+                this.streamStage = 'completed';
+                this.streamActive = false;
+                this.streamMessage = 'Batch processing complete: ' + msg.total_count + ' chemicals planned.';
+                if (msg.bin_counts) {
+                  this.activeBatch.bin_counts = msg.bin_counts;
+                }
+                if (msg.items) {
+                  this.activeBatch.items = msg.items;
+                }
+                if (this.eventSource) {
+                  this.eventSource.close();
+                  this.eventSource = null;
+                }
+              } else if (msg.type === 'stream_error') {
+                this.streamActive = false;
+                this.streamMessage = 'Stream error: ' + (msg.error || 'Unknown error');
+                if (this.eventSource) {
+                  this.eventSource.close();
+                  this.eventSource = null;
+                }
+              }
+            } catch (err) {
+              console.error('Error handling SSE message:', err);
+            }
+          };
+
+          this.eventSource.onerror = (err) => {
+            console.error('SSE connection error:', err);
+            this.streamActive = false;
+            if (this.eventSource) {
+              this.eventSource.close();
+              this.eventSource = null;
+            }
+          };
+        },
+
+        resumePlanning() {
+          this.streamPaused = false;
+          this.streamActive = true;
+          this.startStream(this.activeBatch.run_id, 'planning');
         },
 
         openDossier(item) {
