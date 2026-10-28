@@ -44,18 +44,23 @@
         </div>
       </div>
 
-      <!-- Quick Chemical Search -->
+      <!-- Quick Chemical Search & Upload Button -->
       <div class="flex items-center gap-3">
         <div class="relative w-80">
           <input type="text"
                  x-model="searchQuery"
                  @keydown.enter="performLookup()"
                  placeholder="Quick lookup chemical (e.g. Methanol)..."
-                 :disabled="isLoading"
+                 :disabled="isLoading || isUploading"
                  class="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-16 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 disabled:opacity-50">
           <span class="absolute left-2.5 top-2 text-slate-500 text-xs">🔍</span>
           <span class="absolute right-2 top-1.5 text-[10px] font-mono text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded">Enter ↵</span>
         </div>
+        <button @click="uploadModalOpen = true"
+                class="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-medium transition shadow-sm whitespace-nowrap">
+          <span>📁</span>
+          <span>Upload Batch (.xlsx)</span>
+        </button>
       </div>
     </div>
   </header>
@@ -63,8 +68,130 @@
   <!-- Main View Area -->
   <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
 
-    <!-- Active Chemical Summary Card (Shown when an ad-hoc chemical is looked up) -->
-    <template x-if="activeDossier">
+    <!-- Case A: Active Batch View (3-Column Physical Segregation Grid & Summary) -->
+    <template x-if="activeBatch">
+      <div class="space-y-6">
+        <!-- Batch Summary Header -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] font-mono text-emerald-400 uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-800/60">Active Batch Evaluation</span>
+                <span class="text-xs font-mono text-slate-400" x-text="activeBatch.run_id"></span>
+              </div>
+              <div class="flex items-center gap-3 mt-1.5">
+                <h1 class="text-2xl font-bold text-white flex items-center gap-2">
+                  <span>📑</span>
+                  <span x-text="activeBatch.filename"></span>
+                </h1>
+                <span class="text-xs px-2.5 py-0.5 rounded-full font-mono font-medium bg-slate-800 text-slate-200 border border-slate-700">
+                  <span x-text="activeBatch.total_count"></span> unique chemicals
+                </span>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <button @click="uploadModalOpen = true"
+                      class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-medium transition border border-slate-700 flex items-center gap-1.5">
+                <span>📁</span>
+                <span>Upload New Batch</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Physical Segregation Bin Breakdown Pills -->
+          <div>
+            <div class="text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-2.5">
+              Physical Segregation Storage Breakdown
+            </div>
+            <div class="flex flex-wrap gap-2.5 text-xs">
+              <div class="px-3 py-1.5 rounded-lg border bg-orange-500/10 border-orange-500/30 text-orange-300 flex items-center gap-2">
+                <span class="font-medium">Flammable Solvents</span>
+                <span class="px-1.5 py-0.2 rounded font-mono font-bold bg-orange-500/20 text-orange-200" x-text="activeBatch.bin_counts['Flammable Solvents'] || 0"></span>
+              </div>
+              <div class="px-3 py-1.5 rounded-lg border bg-purple-500/10 border-purple-500/30 text-purple-300 flex items-center gap-2">
+                <span class="font-medium">Inorganic Acids</span>
+                <span class="px-1.5 py-0.2 rounded font-mono font-bold bg-purple-500/20 text-purple-200" x-text="activeBatch.bin_counts['Inorganic Acids'] || 0"></span>
+              </div>
+              <div class="px-3 py-1.5 rounded-lg border bg-cyan-500/10 border-cyan-500/30 text-cyan-300 flex items-center gap-2">
+                <span class="font-medium">Inorganic Bases</span>
+                <span class="px-1.5 py-0.2 rounded font-mono font-bold bg-cyan-500/20 text-cyan-200" x-text="activeBatch.bin_counts['Inorganic Bases'] || 0"></span>
+              </div>
+              <div class="px-3 py-1.5 rounded-lg border bg-pink-500/10 border-pink-500/30 text-pink-300 flex items-center gap-2">
+                <span class="font-medium">Carcinogenic &amp; Toxic Organics</span>
+                <span class="px-1.5 py-0.2 rounded font-mono font-bold bg-pink-500/20 text-pink-200" x-text="activeBatch.bin_counts['Carcinogenic & Toxic Organics'] || 0"></span>
+              </div>
+              <div class="px-3 py-1.5 rounded-lg border bg-yellow-500/10 border-yellow-500/30 text-yellow-300 flex items-center gap-2">
+                <span class="font-medium">Biohazard &amp; Infectious</span>
+                <span class="px-1.5 py-0.2 rounded font-mono font-bold bg-yellow-500/20 text-yellow-200" x-text="activeBatch.bin_counts['Biohazard & Infectious'] || 0"></span>
+              </div>
+              <div class="px-3 py-1.5 rounded-lg border bg-amber-500/10 border-amber-500/30 text-amber-300 flex items-center gap-2">
+                <span class="font-medium">Review Queue</span>
+                <span class="px-1.5 py-0.2 rounded font-mono font-bold bg-amber-500/20 text-amber-200" x-text="activeBatch.bin_counts['Review Queue'] || 0"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3-Column Physical Segregation Card Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <template x-for="item in activeBatch.items" :key="item.chemical">
+            <div :class="item.review_required ? 'border-amber-500/50 bg-amber-950/15 ring-1 ring-amber-500/30' : 'border-slate-800 bg-slate-900/90'"
+                 class="rounded-xl border p-5 shadow-lg flex flex-col justify-between transition hover:border-slate-700 space-y-4">
+              <div class="space-y-3">
+                <!-- Card Header -->
+                <div class="flex items-start justify-between gap-2">
+                  <h3 class="text-base font-bold text-white tracking-tight" x-text="item.chemical"></h3>
+                  <template x-if="item.review_required">
+                    <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 whitespace-nowrap">
+                      Review Required
+                    </span>
+                  </template>
+                </div>
+
+                <!-- Segregation Bin Badge -->
+                <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-800 text-slate-200 border border-slate-700">
+                  <span>🗄️</span>
+                  <span x-text="item.bin"></span>
+                </div>
+
+                <!-- Hazard Category Badges -->
+                <div class="flex flex-wrap gap-1">
+                  <template x-for="cat in item.categories" :key="cat">
+                    <span :class="getBadgeClass(cat)" class="text-[11px] px-2 py-0.5 rounded font-medium border" x-text="cat"></span>
+                  </template>
+                  <template x-if="!item.categories || item.categories.length === 0">
+                    <span class="text-[11px] px-2 py-0.5 rounded font-medium border bg-amber-500/15 text-amber-300 border-amber-500/30">Quarantine</span>
+                  </template>
+                </div>
+
+                <!-- Container Snippet -->
+                <div class="text-xs text-slate-300 flex items-start gap-2 pt-1 border-t border-slate-800/80">
+                  <span class="text-sm shrink-0">🛢️</span>
+                  <span class="line-clamp-2 leading-relaxed" x-text="item.container"></span>
+                </div>
+
+                <!-- Segregation Note -->
+                <div class="text-xs text-slate-400 flex items-start gap-2">
+                  <span class="text-sm shrink-0">🔒</span>
+                  <span class="line-clamp-2 leading-relaxed" x-text="item.segregation"></span>
+                </div>
+              </div>
+
+              <!-- Action Button -->
+              <div class="pt-3 border-t border-slate-800/80">
+                <button @click="openDossier(item)"
+                        class="w-full py-2 px-3 bg-slate-800 hover:bg-emerald-600 text-slate-200 hover:text-white rounded-lg text-xs font-medium transition text-center flex items-center justify-center gap-1">
+                  <span>View Full Plan →</span>
+                </button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </template>
+
+    <!-- Case B: Ad-Hoc Chemical Evaluation Summary (Shown when single chemical searched and no active batch) -->
+    <template x-if="!activeBatch && activeDossier">
       <div class="space-y-6">
         <div class="flex items-center justify-between border-b border-slate-800 pb-4">
           <div>
@@ -112,18 +239,25 @@
       </div>
     </template>
 
-    <!-- Empty State -->
-    <template x-if="!activeDossier && !isLoading">
+    <!-- Case C: Empty State (No batch and no ad-hoc search) -->
+    <template x-if="!activeBatch && !activeDossier && !isLoading">
       <div class="text-center py-24 border border-dashed border-slate-800 rounded-2xl bg-slate-900/40">
         <span class="text-4xl block mb-3">🧪</span>
-        <h2 class="text-base font-bold text-white">Hazardous Waste Ad-Hoc Chemical Lookup</h2>
+        <h2 class="text-base font-bold text-white">Hazardous Waste Ad-Hoc Chemical Lookup &amp; Batch Ingestion</h2>
         <p class="text-xs text-slate-400 max-w-md mx-auto mt-1">
-          Type a waste or chemical name into the search bar above (e.g., <code class="text-emerald-400 font-mono">Methanol</code> or <code class="text-emerald-400 font-mono">Hydrochloric Acid</code>) to generate an institutional waste management plan and physical segregation bin assignment.
+          Type a chemical name into the search bar above (e.g., <code class="text-emerald-400 font-mono">Methanol</code> or <code class="text-emerald-400 font-mono">Hydrochloric Acid</code>), or upload a laboratory Excel inventory to generate institutional waste management plans and physical segregation bin assignments.
         </p>
+        <div class="mt-6 flex justify-center">
+          <button @click="uploadModalOpen = true"
+                  class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-medium transition shadow-sm flex items-center gap-1.5">
+            <span>📁</span>
+            <span>Upload Batch (.xlsx)</span>
+          </button>
+        </div>
       </div>
     </template>
 
-    <!-- Loading State -->
+    <!-- Loading State for Ad-hoc Search -->
     <template x-if="isLoading">
       <div class="text-center py-24">
         <div class="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
@@ -131,6 +265,78 @@
       </div>
     </template>
   </main>
+
+  <!-- Upload Modal -->
+  <div x-show="uploadModalOpen" class="fixed inset-0 z-50 overflow-y-auto" role="dialog" aria-modal="true">
+    <!-- Backdrop with disabled click when isUploading is true -->
+    <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm transition-opacity"
+         @click="if (!isUploading) { uploadModalOpen = false; uploadError = null; }"></div>
+
+    <div class="min-h-full flex items-center justify-center p-4">
+      <div class="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden p-6 space-y-4">
+        <!-- Modal Header -->
+        <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+          <div>
+            <h3 class="text-base font-bold text-white flex items-center gap-2">
+              <span>📁</span>
+              <span>Upload Waste Inventory</span>
+            </h3>
+            <p class="text-xs text-slate-400 mt-0.5">Ingest Excel workbook for batch segregation and compliance planning</p>
+          </div>
+          <button @click="if (!isUploading) { uploadModalOpen = false; uploadError = null; }"
+                  :disabled="isUploading"
+                  :class="isUploading ? 'opacity-30 cursor-not-allowed' : 'text-slate-400 hover:text-white hover:bg-slate-800'"
+                  class="p-1 rounded-lg text-lg transition">✕</button>
+        </div>
+
+        <!-- Inline alert error banner displaying uploadError when non-null -->
+        <template x-if="uploadError">
+          <div class="p-3.5 bg-red-950/60 border border-red-800 rounded-xl text-red-200 text-xs flex items-start gap-2.5">
+            <span class="text-base leading-none">⚠️</span>
+            <div class="flex-1">
+              <div class="font-bold text-red-300">Upload Error</div>
+              <div class="text-[11px] text-red-200/90 mt-0.5" x-text="uploadError"></div>
+            </div>
+            <button @click="uploadError = null" class="text-red-400 hover:text-red-200 text-sm leading-none">✕</button>
+          </div>
+        </template>
+
+        <!-- Dropzone (shown when not uploading) -->
+        <div x-show="!isUploading">
+          <div @dragover.prevent="isDragging = true"
+               @dragleave.prevent="isDragging = false"
+               @drop.prevent="handleDrop($event)"
+               @click="$refs.fileInput.click()"
+               :class="isDragging ? 'border-emerald-500 bg-emerald-950/20' : 'border-slate-700 hover:border-slate-500 bg-slate-950/50 hover:bg-slate-950/80'"
+               class="border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition flex flex-col items-center justify-center">
+            <input type="file" x-ref="fileInput" @change="handleFileSelect($event)" accept=".xlsx,.xls" class="hidden">
+            <div class="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-2xl text-emerald-400 mb-3">
+              📊
+            </div>
+            <div class="text-sm font-semibold text-white">
+              Drag &amp; drop chemical inventory, or <span class="text-emerald-400 underline underline-offset-2">browse</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1.5 max-w-xs">
+              Supports <span class="font-mono text-slate-300">.xlsx</span> and <span class="font-mono text-slate-300">.xls</span> workbooks with a <span class="font-mono text-slate-300">'Hazardous Waste'</span> or <span class="font-mono text-slate-300">'Chemical'</span> column.
+            </p>
+            <div class="mt-4 flex items-center gap-2 text-[11px] text-slate-500 font-mono">
+              <span>Max 50 items</span>
+              <span>•</span>
+              <span>Physical Segregation</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- In-flight spinner showing "Evaluating chemical inventory & generating compliance plans..." while isUploading is true -->
+        <div x-show="isUploading" class="py-12 flex flex-col items-center justify-center text-center">
+          <div class="w-10 h-10 border-3 border-emerald-400 border-t-transparent rounded-full animate-spin mb-4"></div>
+          <div class="text-sm font-semibold text-white">Processing Excel Batch</div>
+          <div class="text-xs text-slate-300 font-mono mt-1">Evaluating chemical inventory &amp; generating compliance plans...</div>
+          <p class="text-[11px] text-slate-500 mt-2">Classifying hazard streams and assigning physical segregation bins</p>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Slide-Over Compliance Dossier Drawer -->
   <div x-show="drawerOpen" class="fixed inset-0 z-50 overflow-hidden" role="dialog" aria-modal="true">
@@ -169,6 +375,16 @@
       <div class="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
         <template x-if="activeDossier">
           <div>
+            <!-- Review Queue Banner in Drawer if review_required -->
+            <template x-if="activeDossier.review_required">
+              <div class="mb-4 p-3.5 bg-amber-950/60 border border-amber-800 rounded-xl text-amber-200 shadow-sm">
+                <div class="font-bold text-amber-300 flex items-center gap-1.5 text-xs mb-1">
+                  <span>⚠️</span> CHEMICAL REVIEW QUEUE
+                </div>
+                <p class="leading-relaxed text-[11px]" x-text="activeDossier.review_reason || 'Manual EHS review required before physical segregation.'"></p>
+              </div>
+            </template>
+
             <!-- Hazard Category Badges -->
             <div class="flex flex-wrap gap-1.5 mb-4">
               <template x-for="cat in activeDossier.categories" :key="cat">
@@ -267,6 +483,11 @@
         activeDossier: null,
         drawerOpen: false,
         activeTab: 'safety',
+        uploadModalOpen: false,
+        isUploading: false,
+        uploadError: null,
+        activeBatch: null,
+        isDragging: false,
 
         async performLookup() {
           const query = this.searchQuery.trim();
@@ -281,7 +502,8 @@
             });
 
             if (!resp.ok) {
-              throw new Error(`Lookup failed with status ${resp.status}`);
+              const errData = await resp.json().catch(() => ({}));
+              throw new Error(errData.detail || `Lookup failed with status ${resp.status}`);
             }
 
             this.activeDossier = await resp.json();
@@ -291,6 +513,65 @@
           } finally {
             this.isLoading = false;
           }
+        },
+
+        handleDrop(e) {
+          this.isDragging = false;
+          if (this.isUploading) return;
+          const files = e.dataTransfer?.files;
+          if (files && files.length > 0) {
+            this.uploadFile(files[0]);
+          }
+        },
+
+        handleFileSelect(e) {
+          if (this.isUploading) return;
+          const files = e.target.files;
+          if (files && files.length > 0) {
+            this.uploadFile(files[0]);
+          }
+          e.target.value = '';
+        },
+
+        async uploadFile(file) {
+          if (!file) return;
+          const validExtensions = ['.xlsx', '.xls'];
+          const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+          if (!validExtensions.includes(ext)) {
+            this.uploadError = 'Only .xlsx and .xls Excel files are accepted.';
+            return;
+          }
+
+          this.isUploading = true;
+          this.uploadError = null;
+
+          try {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const resp = await fetch('/api/upload', {
+              method: 'POST',
+              body: formData
+            });
+
+            const data = await resp.json();
+
+            if (!resp.ok) {
+              throw new Error(data.detail || `Upload failed with status ${resp.status}`);
+            }
+
+            this.activeBatch = data;
+            this.uploadModalOpen = false;
+          } catch (err) {
+            this.uploadError = err.message || 'An error occurred during file upload.';
+          } finally {
+            this.isUploading = false;
+          }
+        },
+
+        openDossier(item) {
+          this.activeDossier = item;
+          this.drawerOpen = true;
         },
 
         openDrawer() {

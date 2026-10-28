@@ -57,6 +57,23 @@ class TestApp(unittest.TestCase):
         self.assertIn('text/html', response.headers['content-type'])
         self.assertIn('HazWaste Studio', response.text)
 
+    def test_root_template_contains_upload_modal_and_grid_elements(self):
+        response = self.client.get('/')
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+        # Header upload button
+        self.assertIn('Upload Batch (.xlsx)', html)
+        # Upload modal container and dropzone
+        self.assertIn('uploadModalOpen', html)
+        self.assertIn('handleDrop', html)
+        self.assertIn('uploadFile', html)
+        # Batch summary bar
+        self.assertIn('activeBatch', html)
+        self.assertIn('Upload New Batch', html)
+        # 3-column card grid
+        self.assertIn('grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3', html)
+        self.assertIn('View Full Plan →', html)
+
     def test_lookup_endpoint_success(self):
         import src.services as services
         fake = FakeClient()
