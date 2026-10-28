@@ -91,6 +91,31 @@ class TestModels(unittest.TestCase):
         self.assertEqual(len(data['items']), 1)
         self.assertEqual(data['items'][0]['chemical'], 'Methanol')
 
+    def test_batch_queued_response_schema(self):
+        from src.models import BatchQueuedResponse
+
+        queued = BatchQueuedResponse(
+            run_id="2026-10-29_020000_123456",
+            filename="lab_inventory.xlsx",
+            total_count=3,
+            chemicals=["Methanol", "Acetone", "Hydrochloric Acid"],
+            pause_after_classification=True,
+            status="queued"
+        )
+        self.assertEqual(queued.run_id, "2026-10-29_020000_123456")
+        self.assertEqual(queued.total_count, 3)
+        self.assertTrue(queued.pause_after_classification)
+        self.assertEqual(queued.status, "queued")
+
+        # Verify defaults
+        minimal = BatchQueuedResponse(
+            run_id="2026-10-29_020000_999999",
+            filename="sample.xlsx",
+            total_count=1,
+            chemicals=["Toluene"]
+        )
+        self.assertFalse(minimal.pause_after_classification)
+        self.assertEqual(minimal.status, "queued")
 
 
 if __name__ == '__main__':

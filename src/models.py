@@ -34,6 +34,14 @@ class BatchRunResponse(BaseModel):
     items: list[WasteManagementDossier] = Field(default_factory=list)
 
 
+class BatchQueuedResponse(BaseModel):
+    run_id: str
+    filename: str
+    total_count: int
+    chemicals: list[str]
+    pause_after_classification: bool = False
+    status: str = "queued"
+
 
 def assign_segregation_bin(categories: list[str], chemical: str, review_required: bool = False) -> str:
     """
