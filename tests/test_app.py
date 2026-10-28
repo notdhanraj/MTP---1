@@ -128,6 +128,16 @@ class TestApp(unittest.TestCase):
         self.assertIn("Biohazard & Infectious Holding", html)
         self.assertIn("Safety Review Queue", html)
 
+    def test_template_contains_zero_result_empty_state_and_reset_button(self):
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+
+        # Zero-result empty state card & reset button
+        self.assertIn("No chemicals match active filters", html)
+        self.assertIn("resetFilters", html)
+        self.assertIn("Reset Filters", html)
+
 
     def test_lookup_endpoint_success(self):
         import src.services as services

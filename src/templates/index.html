@@ -303,12 +303,27 @@
         <!-- View Mode 1: 3-Column Physical Segregation Card Grid -->
         <template x-if="activeViewMode === 'grid'">
           <div class="space-y-4">
+            <!-- Zero-Result Empty State Card (Grid View) -->
             <template x-if="filteredItems.length === 0">
-              <div class="py-12 text-center text-xs text-slate-400 italic bg-slate-900/40 rounded-xl border border-dashed border-slate-800">
-                <span>No chemicals match current search query or hazard filters.</span>
+              <div class="col-span-full bg-slate-900/60 border border-dashed border-slate-700/80 rounded-2xl p-10 text-center space-y-4">
+                <div class="text-3xl">🔍</div>
+                <div class="space-y-1">
+                  <h4 class="text-base font-semibold text-white">No chemicals match active filters</h4>
+                  <p class="text-xs text-slate-400">
+                    <span>Query: </span>
+                    <span class="font-mono text-emerald-400" x-text="batchSearchQuery ? '\"' + batchSearchQuery + '\"' : 'none'"></span>
+                    <span class="mx-2">•</span>
+                    <span>Active Hazards: </span>
+                    <span class="font-mono text-cyan-400" x-text="activeHazardFilters.length > 0 ? activeHazardFilters.join(' + ') : 'All'"></span>
+                  </p>
+                </div>
+                <button @click="resetFilters()"
+                        class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md transition">
+                  Reset Filters
+                </button>
               </div>
             </template>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" x-show="filteredItems.length > 0">
               <template x-for="item in filteredItems" :key="item.chemical">
                 <div :class="item.review_required ? 'border-amber-500/50 bg-amber-950/15 ring-1 ring-amber-500/30' : 'border-slate-800 bg-slate-900/90'"
                      class="rounded-xl border p-5 shadow-lg flex flex-col justify-between transition hover:border-slate-700 space-y-4">
@@ -1004,6 +1019,11 @@
             return this.activeHazardFilters.length === 0;
           }
           return this.activeHazardFilters.includes(category);
+        },
+
+        resetFilters() {
+          this.batchSearchQuery = '';
+          this.activeHazardFilters = [];
         },
 
         get filteredItems() {
