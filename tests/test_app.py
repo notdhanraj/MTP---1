@@ -1,4 +1,5 @@
 import io
+from pathlib import Path
 import types
 import unittest
 from fastapi.testclient import TestClient
@@ -154,6 +155,38 @@ class TestAppUploadEndpoint(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 422)
         self.assertIn("Only .xlsx and .xls Excel files are accepted", response.json()['detail'])
+
+    def test_e2e_real_sample_workbook_ingestion(self):
+        import src.services as services
+        sample_path = Path(__file__).resolve().parent.parent / "src" / "Hazardous Waste.xlsx"
+        self.assertTrue(sample_path.exists(), "Sample file src/Hazardous Waste.xlsx must exist")
+
+        fake_client = FakeClient()
+        orig_batch = services.process_excel_batch
+
+        try:
+            services.process_excel_batch = lambda b, fn, **kwargs: orig_batch(b, fn, client=fake_client, **kwargs)
+
+            with open(sample_path, 'rb') as f:
+                content = f.read()
+
+            response = self.client.post(
+                '/api/upload',
+                files={'file': ('Hazardous Waste.xlsx', io.BytesIO(content), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')}
+            )
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
+            self.assertEqual(data['filename'], 'Hazardous Waste.xlsx')
+            self.assertGreater(data['total_count'], 0)
+            self.assertEqual(len(data['items']), data['total_count'])
+            # Verify every item has required dossier fields
+            for item in data['items']:
+                self.assertTrue(bool(item['chemical']))
+                self.assertTrue(bool(item['bin']))
+                self.assertIsInstance(item['categories'], list)
+                self.assertTrue(bool(item['container']))
+        finally:
+            services.process_excel_batch = orig_batch
 
 
 if __name__ == '__main__':
