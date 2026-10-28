@@ -3,10 +3,16 @@ import io
 import json
 import logging
 from pathlib import Path
+from typing import Iterator
 import pandas as pd
-from src.classify_waste import classify_chemical, normalize_chemical_name
+from src.classify_waste import HazardClassification, classify_chemical, normalize_chemical_name
 from src.generate_management_plan import make_plan
-from src.models import BatchRunResponse, WasteManagementDossier, assign_segregation_bin
+from src.models import (
+    BatchQueuedResponse,
+    BatchRunResponse,
+    WasteManagementDossier,
+    assign_segregation_bin,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -189,3 +195,273 @@ def process_excel_batch(
         bin_counts=bin_counts,
         items=items,
     )
+
+
+def _extract_active_categories(clf_obj_or_dict) -> list[str]:
+    if isinstance(clf_obj_or_dict, dict):
+        return [cat for cat in CATEGORIES_ORDER if clf_obj_or_dict.get(cat.lower(), False)]
+    cats = []
+    if getattr(clf_obj_or_dict, "flammable", False):
+        cats.append("Flammable")
+    if getattr(clf_obj_or_dict, "carcinogenic", False):
+        cats.append("Carcinogenic")
+    if getattr(clf_obj_or_dict, "infectious", False):
+        cats.append("Infectious")
+    if getattr(clf_obj_or_dict, "toxic", False):
+        cats.append("Toxic")
+    if getattr(clf_obj_or_dict, "corrosive", False):
+        cats.append("Corrosive")
+    return cats
+
+
+def initialize_batch_run(
+    file_bytes: bytes,
+    filename: str,
+    pause_after_classification: bool = False,
+    runs_dir: Path | None = None,
+) -> BatchQueuedResponse:
+    target_runs_dir = runs_dir if runs_dir is not None else DEFAULT_RUNS_DIR
+
+    # 1. Parse Excel
+    try:
+        df = pd.read_excel(io.BytesIO(file_bytes))
+    except Exception as e:
+        raise ValueError(f"Invalid Excel workbook format. Please upload a valid .xlsx or .xls file. Error: {e}")
+
+    # 2. Locate column
+    waste_col = detect_waste_column(df)
+
+    # 3. Clean and deduplicate chemical names
+    raw_series = df[waste_col].dropna().astype(str)
+    seen = set()
+    unique_chemicals = []
+    for raw in raw_series:
+        norm = normalize_chemical_name(raw)
+        if norm and norm.lower() not in seen:
+            seen.add(norm.lower())
+            unique_chemicals.append(norm)
+
+    if not unique_chemicals:
+        raise ValueError("No valid chemical names found in the uploaded workbook.")
+
+    # 4. Safeguard limit
+    if len(unique_chemicals) > MAX_BATCH_SIZE:
+        raise ValueError(
+            f"Batch size exceeds limit of {MAX_BATCH_SIZE} unique chemicals per upload (found {len(unique_chemicals)}). Please split your workbook."
+        )
+
+    # 5. Persist run directory and initial metadata
+    timestamp_str = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S_%f")
+    run_dir = target_runs_dir / timestamp_str
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    input_file_path = run_dir / "input.xlsx"
+    with open(input_file_path, "wb") as f:
+        f.write(file_bytes)
+
+    meta_payload = {
+        "run_id": timestamp_str,
+        "filename": filename,
+        "timestamp": datetime.datetime.now().isoformat(),
+        "total_count": len(unique_chemicals),
+        "chemicals": unique_chemicals,
+        "pause_after_classification": pause_after_classification,
+        "status": "queued",
+        "bin_counts": {
+            "Flammable Solvents": 0,
+            "Inorganic Acids": 0,
+            "Inorganic Bases": 0,
+            "Carcinogenic & Toxic Organics": 0,
+            "Biohazard & Infectious": 0,
+            "Review Queue": 0,
+        },
+        "classifications": {},
+        "dossiers": {},
+    }
+
+    meta_file_path = run_dir / "meta.json"
+    with open(meta_file_path, "w", encoding="utf-8") as f:
+        json.dump(meta_payload, f, indent=2)
+
+    return BatchQueuedResponse(
+        run_id=timestamp_str,
+        filename=filename,
+        total_count=len(unique_chemicals),
+        chemicals=unique_chemicals,
+        pause_after_classification=pause_after_classification,
+        status="queued",
+    )
+
+
+def stream_batch_events(
+    run_id: str,
+    stage: str | None = None,
+    runs_dir: Path | None = None,
+    client=None,
+) -> Iterator[dict]:
+    target_runs_dir = runs_dir if runs_dir is not None else DEFAULT_RUNS_DIR
+    run_dir = target_runs_dir / run_id
+    meta_path = run_dir / "meta.json"
+
+    if not meta_path.exists():
+        raise FileNotFoundError(f"Run {run_id} not found.")
+
+    with open(meta_path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+
+    chemicals: list[str] = meta.get("chemicals", [])
+    total = len(chemicals)
+    classifications: dict = meta.get("classifications", {})
+    dossiers: dict = meta.get("dossiers", {})
+    bin_counts: dict = meta.get("bin_counts", {
+        "Flammable Solvents": 0,
+        "Inorganic Acids": 0,
+        "Inorganic Bases": 0,
+        "Carcinogenic & Toxic Organics": 0,
+        "Biohazard & Infectious": 0,
+        "Review Queue": 0,
+    })
+
+    def _save_meta():
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=2)
+
+    execute_classification = (stage is None or stage == "classification") and stage != "planning"
+    execute_planning = (stage == "planning") or (stage is None and not meta.get("pause_after_classification", False))
+
+    # --- STAGE 1: CLASSIFICATION ---
+    if execute_classification:
+        meta["status"] = "classifying"
+        _save_meta()
+
+        yield {"type": "stage_start", "stage": "classification", "total": total}
+
+        for idx, chem in enumerate(chemicals, start=1):
+            if chem in classifications:
+                clf_dict = classifications[chem]["classification"]
+                bin_name = classifications[chem]["bin"]
+            else:
+                try:
+                    clf_obj = classify_chemical(chem, client=client)
+                    active_cats = _extract_active_categories(clf_obj)
+                    bin_name = assign_segregation_bin(active_cats, chem, review_required=False)
+                    clf_dict = clf_obj.model_dump()
+                except Exception as e:
+                    logger.warning(f"Error during classification for chemical '{chem}': {e}")
+                    clf_dict = HazardClassification(
+                        flammable=False, carcinogenic=False, infectious=False, toxic=False, corrosive=False
+                    ).model_dump()
+                    bin_name = "Review Queue"
+
+                classifications[chem] = {
+                    "classification": clf_dict,
+                    "bin": bin_name,
+                }
+                bin_counts[bin_name] = bin_counts.get(bin_name, 0) + 1
+                meta["classifications"] = classifications
+                meta["bin_counts"] = bin_counts
+                _save_meta()
+
+            yield {
+                "type": "item_progress",
+                "stage": "classification",
+                "index": idx,
+                "total": total,
+                "chemical": chem,
+                "classification": clf_dict,
+                "bin": bin_name,
+            }
+
+        yield {
+            "type": "stage_complete",
+            "stage": "classification",
+            "total": total,
+            "bin_counts": bin_counts,
+        }
+
+        if meta.get("pause_after_classification", False) and stage != "planning":
+            meta["status"] = "paused_for_review"
+            _save_meta()
+            yield {
+                "type": "stage_paused",
+                "stage": "classification",
+                "run_id": run_id,
+                "total": total,
+                "message": "Classification complete. Paused for review.",
+            }
+            return
+
+    # --- STAGE 2: MANAGEMENT PLANNING ---
+    if execute_planning:
+        meta["status"] = "planning"
+        _save_meta()
+
+        yield {"type": "stage_start", "stage": "planning", "total": total}
+
+        for idx, chem in enumerate(chemicals, start=1):
+            if chem in dossiers:
+                dossier_dict = dossiers[chem]
+            else:
+                clf_info = classifications.get(chem, {})
+                clf_data = clf_info.get("classification", {})
+                active_categories = _extract_active_categories(clf_data)
+                bin_name = clf_info.get("bin") or assign_segregation_bin(active_categories, chem, review_required=False)
+
+                try:
+                    plan_obj = make_plan(chem, active_categories, client=client)
+                    dossier = WasteManagementDossier(
+                        chemical=chem,
+                        bin=bin_name,
+                        categories=active_categories,
+                        container=plan_obj.recommended_container,
+                        storage=plan_obj.storage_requirements,
+                        ppe=plan_obj.handling_and_ppe,
+                        segregation=plan_obj.segregation_and_incompatibilities,
+                        labeling=plan_obj.labeling_requirements,
+                        spill=plan_obj.spill_and_emergency_management,
+                        identification=plan_obj.identification_and_characterization,
+                        prohibited=plan_obj.prohibited_or_unsafe_actions,
+                        verification=plan_obj.verification_required,
+                        usepa=plan_obj.usepa_framework,
+                        india=plan_obj.indian_framework,
+                        treatment=plan_obj.treatment_framework,
+                        disposal=plan_obj.final_disposal_framework,
+                        review_required=(bin_name == "Review Queue"),
+                        review_reason=None if bin_name != "Review Queue" else "Classification requires review",
+                    )
+                except Exception as e:
+                    logger.warning(f"Error during planning for chemical '{chem}': {e}")
+                    dossier = create_fallback_dossier(chem, reason=f"Plan generation error: {e}")
+
+                dossier_dict = dossier.model_dump()
+                dossiers[chem] = dossier_dict
+                meta["dossiers"] = dossiers
+
+                if dossier.bin != bin_name:
+                    bin_counts[bin_name] = max(0, bin_counts.get(bin_name, 0) - 1)
+                    bin_counts[dossier.bin] = bin_counts.get(dossier.bin, 0) + 1
+                    meta["bin_counts"] = bin_counts
+
+                _save_meta()
+
+            yield {
+                "type": "item_progress",
+                "stage": "planning",
+                "index": idx,
+                "total": total,
+                "chemical": chem,
+                "dossier": dossier_dict,
+            }
+
+        meta["status"] = "completed"
+        _save_meta()
+
+        yield {
+            "type": "complete",
+            "status": "completed",
+            "run_id": run_id,
+            "total_count": total,
+            "bin_counts": bin_counts,
+            "items": [dossiers[c] for c in chemicals if c in dossiers],
+        }
+

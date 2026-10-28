@@ -1,4 +1,5 @@
 import io
+import json
 from pathlib import Path
 import tempfile
 import types
@@ -6,7 +7,13 @@ import unittest
 import pandas as pd
 from src.classify_waste import HazardClassification
 from src.generate_management_plan import ManagementPlan
-from src.services import detect_waste_column, lookup_chemical, process_excel_batch
+from src.services import (
+    detect_waste_column,
+    initialize_batch_run,
+    lookup_chemical,
+    process_excel_batch,
+    stream_batch_events,
+)
 
 
 class FakeResponses:
@@ -175,6 +182,216 @@ class TestBatchIngestionServices(unittest.TestCase):
                 process_excel_batch(excel_bytes, 'too_large.xlsx', runs_dir=Path(tmp_dir))
             self.assertIn("exceeds limit of 50 unique chemicals", str(ctx.exception))
 
+    def test_initialize_batch_run_creates_run_dir_and_meta(self):
+        excel_bytes = self._create_test_excel('Hazardous Waste', ['Methanol', 'Acetone'])
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            runs_path = Path(tmp_dir)
+            queued = initialize_batch_run(
+                excel_bytes,
+                'test.xlsx',
+                pause_after_classification=True,
+                runs_dir=runs_path
+            )
+            self.assertEqual(queued.total_count, 2)
+            self.assertTrue(queued.pause_after_classification)
+            self.assertEqual(queued.status, "queued")
+
+            run_folder = runs_path / queued.run_id
+            self.assertTrue(run_folder.exists())
+            self.assertTrue((run_folder / 'input.xlsx').exists())
+            self.assertTrue((run_folder / 'meta.json').exists())
+
+            with open(run_folder / 'meta.json', 'r', encoding='utf-8') as f:
+                meta = json.load(f)
+            self.assertEqual(meta['status'], 'queued')
+            self.assertEqual(meta['chemicals'], ['Methanol', 'Acetone'])
+            self.assertTrue(meta['pause_after_classification'])
+            self.assertEqual(meta['total_count'], 2)
+            self.assertIn('Flammable Solvents', meta['bin_counts'])
+            self.assertEqual(meta['bin_counts']['Flammable Solvents'], 0)
+            self.assertEqual(meta['classifications'], {})
+            self.assertEqual(meta['dossiers'], {})
+
+    def test_stream_batch_events_full_flow_straight_through(self):
+        excel_bytes = self._create_test_excel('Hazardous Waste', ['Methanol'])
+        fake_client = FakeClient()
+        classification = HazardClassification(
+            flammable=True, carcinogenic=False, infectious=False, toxic=False, corrosive=False
+        )
+        plan = ManagementPlan(
+            chemical='Methanol',
+            identification_and_characterization='desc',
+            segregation_and_incompatibilities='seg',
+            recommended_container='can',
+            labeling_requirements='lbl',
+            storage_requirements='store',
+            handling_and_ppe='ppe',
+            spill_and_emergency_management='spill',
+            treatment_framework='treat',
+            final_disposal_framework='disp',
+            usepa_framework='epa',
+            indian_framework='india',
+            prohibited_or_unsafe_actions='prohibited',
+            verification_required='ver',
+        )
+
+        def side_effect(**kwargs):
+            if kwargs['text_format'] is HazardClassification:
+                return types.SimpleNamespace(output_parsed=classification)
+            return types.SimpleNamespace(output_parsed=plan)
+
+        fake_client.responses.parse = side_effect
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            runs_path = Path(tmp_dir)
+            queued = initialize_batch_run(
+                excel_bytes, 'test.xlsx', pause_after_classification=False, runs_dir=runs_path
+            )
+
+            events = list(stream_batch_events(queued.run_id, runs_dir=runs_path, client=fake_client))
+            event_types = [e['type'] for e in events]
+
+            # Straight-through sequence: stage_start(classification) -> item_progress -> stage_complete -> stage_start(planning) -> item_progress -> complete
+            self.assertIn('stage_start', event_types)
+            self.assertIn('stage_complete', event_types)
+            self.assertIn('complete', event_types)
+            self.assertNotIn('stage_paused', event_types)
+
+            # Check final complete event
+            complete_event = [e for e in events if e['type'] == 'complete'][0]
+            self.assertEqual(complete_event['total_count'], 1)
+            self.assertIn('Flammable Solvents', complete_event['bin_counts'])
+            self.assertEqual(len(complete_event['items']), 1)
+            self.assertEqual(complete_event['items'][0]['chemical'], 'Methanol')
+
+            # Verify meta.json updated to completed
+            meta_path = runs_path / queued.run_id / 'meta.json'
+            with open(meta_path, 'r', encoding='utf-8') as f:
+                meta_completed = json.load(f)
+            self.assertEqual(meta_completed['status'], 'completed')
+            self.assertIn('Methanol', meta_completed['dossiers'])
+
+    def test_stream_batch_events_pause_and_resumption(self):
+        excel_bytes = self._create_test_excel('Hazardous Waste', ['Methanol'])
+        fake_client = FakeClient()
+        classification = HazardClassification(
+            flammable=True, carcinogenic=False, infectious=False, toxic=False, corrosive=False
+        )
+        plan = ManagementPlan(
+            chemical='Methanol',
+            identification_and_characterization='desc',
+            segregation_and_incompatibilities='seg',
+            recommended_container='can',
+            labeling_requirements='lbl',
+            storage_requirements='store',
+            handling_and_ppe='ppe',
+            spill_and_emergency_management='spill',
+            treatment_framework='treat',
+            final_disposal_framework='disp',
+            usepa_framework='epa',
+            indian_framework='india',
+            prohibited_or_unsafe_actions='prohibited',
+            verification_required='ver',
+        )
+
+        def side_effect(**kwargs):
+            if kwargs['text_format'] is HazardClassification:
+                return types.SimpleNamespace(output_parsed=classification)
+            return types.SimpleNamespace(output_parsed=plan)
+
+        fake_client.responses.parse = side_effect
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            runs_path = Path(tmp_dir)
+            queued = initialize_batch_run(
+                excel_bytes, 'test.xlsx', pause_after_classification=True, runs_dir=runs_path
+            )
+
+            # Stream Stage 1 (Classification)
+            stage1_events = list(stream_batch_events(queued.run_id, runs_dir=runs_path, client=fake_client))
+            stage1_types = [e['type'] for e in stage1_events]
+            self.assertIn('stage_paused', stage1_types)
+            self.assertNotIn('complete', stage1_types)
+
+            # Check meta.json reflects paused_for_review
+            meta_path = runs_path / queued.run_id / 'meta.json'
+            with open(meta_path, 'r', encoding='utf-8') as f:
+                meta = json.load(f)
+            self.assertEqual(meta['status'], 'paused_for_review')
+            self.assertIn('Methanol', meta['classifications'])
+            self.assertNotIn('Methanol', meta.get('dossiers', {}))
+
+            # Stream Stage 2 (Planning Resume)
+            stage2_events = list(stream_batch_events(queued.run_id, stage='planning', runs_dir=runs_path, client=fake_client))
+            stage2_types = [e['type'] for e in stage2_events]
+            self.assertIn('stage_start', stage2_types)
+            self.assertIn('complete', stage2_types)
+
+            # Verify meta.json updated to completed
+            with open(meta_path, 'r', encoding='utf-8') as f:
+                meta_completed = json.load(f)
+            self.assertEqual(meta_completed['status'], 'completed')
+            self.assertIn('Methanol', meta_completed['dossiers'])
+
+    def test_stream_batch_events_chemical_error_fallback(self):
+        excel_bytes = self._create_test_excel('Hazardous Waste', ['FaultyChem', 'ValidChem'])
+        fake_client = FakeClient()
+        valid_classification = HazardClassification(
+            flammable=True, carcinogenic=False, infectious=False, toxic=False, corrosive=False
+        )
+        valid_plan = ManagementPlan(
+            chemical='ValidChem',
+            identification_and_characterization='desc',
+            segregation_and_incompatibilities='seg',
+            recommended_container='can',
+            labeling_requirements='lbl',
+            storage_requirements='store',
+            handling_and_ppe='ppe',
+            spill_and_emergency_management='spill',
+            treatment_framework='treat',
+            final_disposal_framework='disp',
+            usepa_framework='epa',
+            indian_framework='india',
+            prohibited_or_unsafe_actions='prohibited',
+            verification_required='ver',
+        )
+
+        def side_effect(**kwargs):
+            inp = kwargs.get('input', '')
+            if 'FaultyChem' in inp:
+                raise RuntimeError("LLM failure for FaultyChem")
+            if kwargs['text_format'] is HazardClassification:
+                return types.SimpleNamespace(output_parsed=valid_classification)
+            return types.SimpleNamespace(output_parsed=valid_plan)
+
+        fake_client.responses.parse = side_effect
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            runs_path = Path(tmp_dir)
+            queued = initialize_batch_run(
+                excel_bytes, 'test_fallback.xlsx', pause_after_classification=False, runs_dir=runs_path
+            )
+
+            events = list(stream_batch_events(queued.run_id, runs_dir=runs_path, client=fake_client))
+            event_types = [e['type'] for e in events]
+            self.assertIn('complete', event_types)
+
+            complete_event = [e for e in events if e['type'] == 'complete'][0]
+            self.assertEqual(complete_event['total_count'], 2)
+            self.assertEqual(complete_event['bin_counts']['Review Queue'], 1)
+            self.assertEqual(complete_event['bin_counts']['Flammable Solvents'], 1)
+
+            # FaultyChem dossier is fallback
+            faulty_dossier = [item for item in complete_event['items'] if item['chemical'] == 'FaultyChem'][0]
+            self.assertEqual(faulty_dossier['bin'], 'Review Queue')
+            self.assertTrue(faulty_dossier['review_required'])
+
+            # ValidChem dossier is normal
+            valid_dossier = [item for item in complete_event['items'] if item['chemical'] == 'ValidChem'][0]
+            self.assertEqual(valid_dossier['bin'], 'Flammable Solvents')
+            self.assertFalse(valid_dossier['review_required'])
+
 
 if __name__ == '__main__':
     unittest.main()
+
