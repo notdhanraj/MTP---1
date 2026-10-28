@@ -72,6 +72,10 @@ _Avoid_: Error list, quarantine bin, failed tasks
 A procedural verification checkpoint in batch processing where assigned hazard categories are inspected and confirmed prior to synthesizing legal compliance and disposal frameworks.
 _Avoid_: Hazard check, pre-review, verification pause, preliminary approval
 
+**Containment Zone**:
+A designated physical storage sector or secondary containment unit (e.g., Flammable Cabinet, Dedicated Acid Storage) allocated to isolate chemically compatible waste streams and enforce laboratory safety segregation.
+_Avoid_: Category bucket, storage group, waste folder
+
 ### Regulatory Standards
 
 **RCRA Framework**:
