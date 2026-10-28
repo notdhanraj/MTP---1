@@ -1,11 +1,9 @@
-import os
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from src.models import WasteManagementDossier
-from src.services import lookup_chemical
 import src.services as services
 
 BASE_DIR = Path(__file__).resolve().parent
