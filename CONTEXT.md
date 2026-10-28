@@ -68,6 +68,10 @@ _Avoid_: Job, process, pipeline run, task execution
 A segregated holding category for chemicals whose hazard classification or management plan requires human verification due to ambiguous naming, novel formulations, or evaluation failure.
 _Avoid_: Error list, quarantine bin, failed tasks
 
+**Classification Review**:
+A procedural verification checkpoint in batch processing where assigned hazard categories are inspected and confirmed prior to synthesizing legal compliance and disposal frameworks.
+_Avoid_: Hazard check, pre-review, verification pause, preliminary approval
+
 ### Regulatory Standards
 
 **RCRA Framework**:
