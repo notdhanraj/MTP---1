@@ -51,6 +51,47 @@ class TestModels(unittest.TestCase):
         self.assertEqual(data['bin'], 'Flammable Solvents')
         self.assertFalse(data['review_required'])
 
+    def test_batch_run_response_serialization(self):
+        from src.models import BatchRunResponse
+
+        dossier = WasteManagementDossier(
+            chemical='Methanol',
+            bin='Flammable Solvents',
+            categories=['Flammable', 'Toxic'],
+            container='Type I safety can',
+            storage='Flammable cabinet',
+            ppe='Nitrile gloves, goggles',
+            segregation='Isolate from oxidizers',
+            labeling='Flammable Liquid',
+            spill='Absorb with pads',
+            identification='HPLC solvent',
+            prohibited='No drain disposal',
+            verification='Check flash point',
+            usepa='D001, U154',
+            india='HOWM Schedule I',
+            treatment='TSDF incineration',
+            disposal='Authorized TSDF',
+            review_required=False,
+            review_reason=None,
+        )
+
+        batch = BatchRunResponse(
+            run_id='2026-10-29_010000',
+            filename='inventory.xlsx',
+            total_count=1,
+            bin_counts={'Flammable Solvents': 1},
+            items=[dossier],
+        )
+
+        data = batch.model_dump()
+        self.assertEqual(data['run_id'], '2026-10-29_010000')
+        self.assertEqual(data['filename'], 'inventory.xlsx')
+        self.assertEqual(data['total_count'], 1)
+        self.assertEqual(data['bin_counts']['Flammable Solvents'], 1)
+        self.assertEqual(len(data['items']), 1)
+        self.assertEqual(data['items'][0]['chemical'], 'Methanol')
+
+
 
 if __name__ == '__main__':
     unittest.main()

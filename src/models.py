@@ -26,6 +26,15 @@ class WasteManagementDossier(BaseModel):
         return self.container
 
 
+class BatchRunResponse(BaseModel):
+    run_id: str
+    filename: str
+    total_count: int
+    bin_counts: dict[str, int] = Field(default_factory=dict)
+    items: list[WasteManagementDossier] = Field(default_factory=list)
+
+
+
 def assign_segregation_bin(categories: list[str], chemical: str, review_required: bool = False) -> str:
     """
     Deterministic rule-based mapping of hazard categories and chemical name
