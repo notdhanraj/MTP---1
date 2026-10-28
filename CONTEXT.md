@@ -44,6 +44,10 @@ _Avoid_: SOP, safety protocol, chemical procedure, disposal script
 The physical separation of chemically incompatible or differently categorized waste streams into distinct containment areas to prevent hazardous reactions.
 _Avoid_: Sorting, batching, isolation
 
+**Segregation Bin**:
+A designated physical storage cabinet or secondary containment zone within a laboratory used to isolate chemically compatible waste streams and prevent adverse co-mingling reactions.
+_Avoid_: Waste container, trash bin, storage box, locker
+
 **Recommended Container**:
 The dedicated, chemically compatible vessel prescribed for collecting, sealing, and storing a specific hazardous waste stream.
 _Avoid_: Bottle, jar, waste receptacle, packaging
