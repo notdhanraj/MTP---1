@@ -1,4 +1,5 @@
 import io
+import json
 from pathlib import Path
 import types
 import unittest
@@ -284,6 +285,70 @@ class TestAppUploadEndpoint(unittest.TestCase):
                 self.assertTrue(bool(item['container']))
         finally:
             services.process_excel_batch = orig_batch
+
+    def test_e2e_live_sse_batch_processing_and_review_pause(self):
+        import src.services as services
+        from src.app import app
+
+        sample_path = Path(__file__).resolve().parent.parent / "src" / "Hazardous Waste.xlsx"
+        if not sample_path.exists():
+            sample_path = Path("src/Hazardous Waste.xlsx")
+        self.assertTrue(sample_path.exists(), "Sample workbook src/Hazardous Waste.xlsx must exist")
+
+        with open(sample_path, "rb") as f:
+            file_bytes = f.read()
+
+        app.state.client = FakeClient()
+
+        # 1. Upload workbook with pause_after_classification=True
+        upload_resp = self.client.post(
+            "/api/upload",
+            files={"file": ("Hazardous Waste.xlsx", io.BytesIO(file_bytes), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            data={"pause_after_classification": "true"}
+        )
+        self.assertEqual(upload_resp.status_code, 200)
+        queued = upload_resp.json()
+        run_id = queued["run_id"]
+        self.assertGreater(queued["total_count"], 0)
+        self.assertTrue(queued["pause_after_classification"])
+        self.assertEqual(queued["status"], "queued")
+
+        # 2. Connect to SSE stream for Stage 1 (Classification)
+        stream_stage1 = self.client.get(f"/api/runs/{run_id}/stream")
+        self.assertEqual(stream_stage1.status_code, 200)
+        self.assertEqual(stream_stage1.headers["content-type"], "text/event-stream; charset=utf-8")
+        body1 = stream_stage1.text
+
+        # Verify Stage 1 emitted classification events and paused cleanly
+        self.assertIn('"stage": "classification"', body1)
+        self.assertIn('"type": "stage_paused"', body1)
+        self.assertNotIn('"type": "complete"', body1)
+
+        # 3. Resume Stage 2 (Planning)
+        stream_stage2 = self.client.get(f"/api/runs/{run_id}/stream?stage=planning")
+        self.assertEqual(stream_stage2.status_code, 200)
+        self.assertEqual(stream_stage2.headers["content-type"], "text/event-stream; charset=utf-8")
+        body2 = stream_stage2.text
+
+        # Verify Stage 2 emitted planning events and completed
+        self.assertIn('"stage": "planning"', body2)
+        self.assertIn('"type": "complete"', body2)
+        self.assertIn('"status": "completed"', body2)
+
+        # 4. Verify data/runs/<run_id>/meta.json
+        meta_file = services.DEFAULT_RUNS_DIR / run_id / "meta.json"
+        self.assertTrue(meta_file.exists(), f"Meta file {meta_file} must exist")
+        with open(meta_file, "r", encoding="utf-8") as f:
+            meta_data = json.load(f)
+        self.assertEqual(meta_data["status"], "completed")
+        self.assertIsInstance(meta_data["dossiers"], dict)
+        self.assertGreater(len(meta_data["dossiers"]), 0)
+
+
+def __getattr__(name: str):
+    if name == "TestAppRoutes":
+        return TestAppUploadEndpoint
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 if __name__ == '__main__':
