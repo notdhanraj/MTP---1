@@ -76,6 +76,24 @@ class TestOpenAIMigration(unittest.TestCase):
         self.assertIn('Methanol', call['input'])
         self.assertNotIn('temperature', call)
 
+    def test_classify_chemical_accepts_explicit_client(self):
+        module = self.import_script(ROOT / 'classify_waste.py', 'classify_explicit_mod')
+        custom_client = FakeClient()
+        expected = module.HazardClassification(
+            flammable=True,
+            carcinogenic=False,
+            infectious=False,
+            toxic=False,
+            corrosive=False,
+        )
+        custom_client.responses.parsed = expected
+
+        result = module.classify_chemical('Ethanol', client=custom_client)
+
+        self.assertIs(result, expected)
+        self.assertEqual(len(custom_client.responses.calls), 1)
+        self.assertIn('Ethanol', custom_client.responses.calls[0]['input'])
+
     def test_management_plan_uses_luna_medium_and_pydantic_schema(self):
         module = self.import_script(ROOT / 'generate_management_plan.py', 'plan_mod')
         expected = module.ManagementPlan(

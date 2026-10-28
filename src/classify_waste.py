@@ -55,7 +55,11 @@ def normalize_chemical_name(value):
     return " ".join(str(value).strip().split())
 
 
-def classify_chemical(chemical):
+def classify_chemical(chemical, client=None):
+    active_client = client if client is not None else globals().get("client")
+    if active_client is None:
+        raise RuntimeError("OpenAI client is not configured.")
+
     prompt = f"""
 You are assisting with preliminary hazardous-waste classification for
 a university wet laboratory.
@@ -95,7 +99,7 @@ Important classification rules:
   waste description provided.
 """
 
-    response = client.responses.parse(
+    response = active_client.responses.parse(
         model=MODEL,
         input=prompt,
         reasoning={"effort": REASONING_EFFORT},
