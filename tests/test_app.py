@@ -106,6 +106,7 @@ class TestApp(unittest.TestCase):
 class TestAppUploadEndpoint(unittest.TestCase):
     def setUp(self):
         from src.app import app
+        app.state.client = None
         self.client = TestClient(app)
 
     def _create_excel(self, col: str, rows: list[str]) -> io.BytesIO:
@@ -127,7 +128,7 @@ class TestAppUploadEndpoint(unittest.TestCase):
 
             buf = self._create_excel('Hazardous Waste', ['Methanol', 'Hydrochloric Acid'])
             response = self.client.post(
-                '/api/upload',
+                '/api/upload?sync=true',
                 files={'file': ('inventory.xlsx', buf, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')}
             )
             self.assertEqual(response.status_code, 200)
@@ -138,6 +139,92 @@ class TestAppUploadEndpoint(unittest.TestCase):
             self.assertEqual(len(data['items']), 2)
         finally:
             services.process_excel_batch = orig_batch
+
+    def test_upload_endpoint_returns_batch_queued_response(self):
+        buf = self._create_excel('Hazardous Waste', ['Acetone', 'Toluene'])
+        response = self.client.post(
+            "/api/upload",
+            files={"file": ("inventory.xlsx", buf, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            data={"pause_after_classification": "true"}
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("run_id", data)
+        self.assertEqual(data["total_count"], 2)
+        self.assertTrue(data["pause_after_classification"])
+        self.assertEqual(data["status"], "queued")
+        self.assertEqual(data["chemicals"], ["Acetone", "Toluene"])
+
+    def test_upload_endpoint_backward_compatible_sync_param(self):
+        buf = self._create_excel('Hazardous Waste', ['Acetone'])
+        fake_client = FakeClient()
+        import src.services as services
+        orig_batch = services.process_excel_batch
+        try:
+            services.process_excel_batch = lambda b, fn, **kwargs: orig_batch(b, fn, client=fake_client, **kwargs)
+            response = self.client.post(
+                "/api/upload?sync=true",
+                files={"file": ("inventory.xlsx", buf, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+            )
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
+            self.assertIn("items", data)
+            self.assertEqual(len(data["items"]), 1)
+            self.assertEqual(data["items"][0]["chemical"], "Acetone")
+        finally:
+            services.process_excel_batch = orig_batch
+
+    def test_stream_endpoint_returns_sse_event_stream(self):
+        buf = self._create_excel('Hazardous Waste', ['Acetone'])
+        upload_resp = self.client.post(
+            "/api/upload",
+            files={"file": ("inventory.xlsx", buf, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            data={"pause_after_classification": "false"}
+        )
+        self.assertEqual(upload_resp.status_code, 200)
+        run_id = upload_resp.json()["run_id"]
+
+        from src.app import app
+        app.state.client = FakeClient()
+
+        stream_resp = self.client.get(f"/api/runs/{run_id}/stream")
+        self.assertEqual(stream_resp.status_code, 200)
+        self.assertEqual(stream_resp.headers["content-type"], "text/event-stream; charset=utf-8")
+
+        body_text = stream_resp.text
+        self.assertIn("data: {", body_text)
+        self.assertIn('"type": "stage_start"', body_text)
+        self.assertIn('"type": "complete"', body_text)
+
+    def test_stream_endpoint_handles_pause_and_planning_resume(self):
+        buf = self._create_excel('Hazardous Waste', ['Acetone'])
+        upload_resp = self.client.post(
+            "/api/upload",
+            files={"file": ("inventory.xlsx", buf, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            data={"pause_after_classification": "true"}
+        )
+        self.assertEqual(upload_resp.status_code, 200)
+        run_id = upload_resp.json()["run_id"]
+
+        from src.app import app
+        app.state.client = FakeClient()
+
+        # 1. First stream stops at stage_paused
+        stream1 = self.client.get(f"/api/runs/{run_id}/stream")
+        self.assertEqual(stream1.status_code, 200)
+        self.assertIn('"type": "stage_paused"', stream1.text)
+        self.assertNotIn('"type": "complete"', stream1.text)
+
+        # 2. Resume planning stage
+        stream2 = self.client.get(f"/api/runs/{run_id}/stream?stage=planning")
+        self.assertEqual(stream2.status_code, 200)
+        self.assertIn('"stage": "planning"', stream2.text)
+        self.assertIn('"type": "complete"', stream2.text)
+
+    def test_stream_endpoint_returns_404_for_unknown_run(self):
+        resp = self.client.get("/api/runs/nonexistent_run_id/stream")
+        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(resp.json(), {"detail": "Run 'nonexistent_run_id' not found."})
 
     def test_upload_missing_column_returns_422(self):
         buf = self._create_excel('Invalid Header', ['Item 1'])
@@ -171,7 +258,7 @@ class TestAppUploadEndpoint(unittest.TestCase):
                 content = f.read()
 
             response = self.client.post(
-                '/api/upload',
+                '/api/upload?sync=true',
                 files={'file': ('Hazardous Waste.xlsx', io.BytesIO(content), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')}
             )
             self.assertEqual(response.status_code, 200)
@@ -191,3 +278,4 @@ class TestAppUploadEndpoint(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

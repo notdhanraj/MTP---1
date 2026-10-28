@@ -1,9 +1,10 @@
+import json
 from pathlib import Path
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-from src.models import BatchRunResponse, WasteManagementDossier
+from src.models import BatchQueuedResponse, BatchRunResponse, WasteManagementDossier
 import src.services as services
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -14,6 +15,7 @@ app = FastAPI(
     description="Wet laboratory hazardous waste classification and physical segregation planning.",
     version="1.0.0",
 )
+app.state.client = None
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
@@ -40,8 +42,12 @@ async def api_lookup_chemical(payload: LookupRequest):
     return services.lookup_chemical(chemical)
 
 
-@app.post("/api/upload", response_model=BatchRunResponse)
-async def api_upload_batch(file: UploadFile = File(...)):
+@app.post("/api/upload")
+async def upload_excel_batch(
+    file: UploadFile = File(...),
+    pause_after_classification: bool = Form(False),
+    sync: bool = Query(False),
+):
     filename = file.filename or "uploaded_waste.xlsx"
     clean_name = filename.lower()
     if not (clean_name.endswith(".xlsx") or clean_name.endswith(".xls")):
@@ -52,11 +58,66 @@ async def api_upload_batch(file: UploadFile = File(...)):
 
     try:
         content = await file.read()
-        return services.process_excel_batch(content, filename)
+        if not content:
+            raise HTTPException(
+                status_code=422,
+                detail="The uploaded file is empty. Please provide a valid Excel workbook."
+            )
+        if sync:
+            client = getattr(app.state, "client", None)
+            if client is not None:
+                return services.process_excel_batch(content, filename, client=client)
+            return services.process_excel_batch(content, filename)
+        else:
+            return services.initialize_batch_run(
+                content,
+                filename,
+                pause_after_classification=pause_after_classification,
+            )
+    except HTTPException:
+        raise
     except ValueError as ve:
         raise HTTPException(status_code=422, detail=str(ve))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Unexpected server error processing workbook: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unexpected server error processing workbook: {e}"
+        )
+
+
+@app.get("/api/runs/{run_id}/stream")
+async def stream_run_events(
+    run_id: str,
+    stage: str | None = Query(None),
+):
+    run_dir = services.DEFAULT_RUNS_DIR / run_id
+    meta_path = run_dir / "meta.json"
+    if not meta_path.exists():
+        alt_path = Path("data/runs") / run_id / "meta.json"
+        if alt_path.exists():
+            meta_path = alt_path
+        else:
+            raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found.")
+
+    def event_generator():
+        try:
+            client = getattr(app.state, "client", None)
+            for event in services.stream_batch_events(run_id=run_id, stage=stage, client=client):
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as e:
+            err_payload = {"type": "stream_error", "error": str(e)}
+            yield f"data: {json.dumps(err_payload)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
 
 
 if __name__ == "__main__":
