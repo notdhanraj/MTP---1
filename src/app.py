@@ -1,9 +1,9 @@
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-from src.models import WasteManagementDossier
+from src.models import BatchRunResponse, WasteManagementDossier
 import src.services as services
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -38,6 +38,25 @@ async def api_lookup_chemical(payload: LookupRequest):
     if not chemical:
         raise HTTPException(status_code=422, detail="Chemical name cannot be empty.")
     return services.lookup_chemical(chemical)
+
+
+@app.post("/api/upload", response_model=BatchRunResponse)
+async def api_upload_batch(file: UploadFile = File(...)):
+    filename = file.filename or "uploaded_waste.xlsx"
+    clean_name = filename.lower()
+    if not (clean_name.endswith(".xlsx") or clean_name.endswith(".xls")):
+        raise HTTPException(
+            status_code=422,
+            detail="Only .xlsx and .xls Excel files are accepted."
+        )
+
+    try:
+        content = await file.read()
+        return services.process_excel_batch(content, filename)
+    except ValueError as ve:
+        raise HTTPException(status_code=422, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected server error processing workbook: {e}")
 
 
 if __name__ == "__main__":
