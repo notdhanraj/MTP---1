@@ -21,6 +21,10 @@ class WasteManagementDossier(BaseModel):
     review_required: bool = False
     review_reason: str | None = None
 
+    @property
+    def recommended_container(self) -> str:
+        return self.container
+
 
 def assign_segregation_bin(categories: list[str], chemical: str, review_required: bool = False) -> str:
     """
