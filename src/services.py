@@ -155,7 +155,7 @@ def process_excel_batch(
         )
 
     # 5. Persist run directory
-    timestamp_str = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    timestamp_str = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S_%f")
     run_dir = target_runs_dir / timestamp_str
     run_dir.mkdir(parents=True, exist_ok=True)
 
