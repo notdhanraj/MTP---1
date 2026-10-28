@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent / 'src'
 
 
 class FakeResponses:
