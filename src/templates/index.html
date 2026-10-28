@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hazardous Waste Management Platform (D2S-MTP)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>[x-cloak] { display: none !important; }</style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans antialiased min-h-screen pb-16 selection:bg-emerald-500/30 selection:text-emerald-200"
+      x-data="hazWasteApp()" x-cloak>
+
+  <!-- Global Header -->
+  <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold text-lg">
+          ☣
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="font-bold tracking-tight text-white">HazWaste Studio</span>
+            <span class="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">D2S-MTP</span>
+            <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">Variant C</span>
+          </div>
+          <p class="text-xs text-slate-400">Institutional Wet Laboratory Waste Classification & Segregation</p>
+        </div>
+      </div>
+
+      <!-- Quick Chemical Search -->
+      <div class="flex items-center gap-3">
+        <div class="relative w-80">
+          <input type="text"
+                 x-model="searchQuery"
+                 @keydown.enter="performLookup()"
+                 placeholder="Quick lookup chemical (e.g. Methanol)..."
+                 :disabled="isLoading"
+                 class="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-16 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 disabled:opacity-50">
+          <span class="absolute left-2.5 top-2 text-slate-500 text-xs">🔍</span>
+          <span class="absolute right-2 top-1.5 text-[10px] font-mono text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded">Enter ↵</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main View Area -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
+
+    <!-- Active Chemical Summary Card (Shown when an ad-hoc chemical is looked up) -->
+    <template x-if="activeDossier">
+      <div class="space-y-6">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-mono text-emerald-400 uppercase tracking-wider">Active Chemical Evaluation</span>
+              <span class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono" x-text="activeDossier.bin"></span>
+            </div>
+            <h1 class="text-2xl font-bold text-white mt-1" x-text="activeDossier.chemical"></h1>
+          </div>
+          <button @click="openDrawer()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-medium transition shadow-sm">
+            View Complete 14-Field Dossier →
+          </button>
+        </div>
+
+        <!-- Segregation Preview Card (Variant C) -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg space-y-4">
+            <div class="text-xs font-mono text-slate-400 uppercase">Physical Storage Bin</div>
+            <div class="text-lg font-bold text-white flex items-center gap-2">
+              <span>🗄️</span>
+              <span x-text="activeDossier.bin"></span>
+            </div>
+            <div class="text-xs text-slate-400 leading-relaxed" x-text="activeDossier.storage"></div>
+          </div>
+
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg space-y-4">
+            <div class="text-xs font-mono text-slate-400 uppercase">Recommended Container</div>
+            <div class="text-base font-semibold text-slate-200" x-text="activeDossier.container"></div>
+            <div class="text-xs text-slate-400 leading-relaxed" x-text="activeDossier.labeling"></div>
+          </div>
+
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg space-y-4">
+            <div class="text-xs font-mono text-slate-400 uppercase">Hazard Profile</div>
+            <div class="flex flex-wrap gap-1.5">
+              <template x-for="cat in activeDossier.categories" :key="cat">
+                <span :class="getBadgeClass(cat)" class="text-xs px-2.5 py-0.5 rounded font-medium border" x-text="cat"></span>
+              </template>
+              <template x-if="activeDossier.categories.length === 0">
+                <span class="text-xs px-2.5 py-0.5 rounded font-medium border bg-amber-500/15 text-amber-300 border-amber-500/30">Review Required</span>
+              </template>
+            </div>
+            <div class="text-[11px] text-slate-400" x-text="activeDossier.identification"></div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- Empty State -->
+    <template x-if="!activeDossier && !isLoading">
+      <div class="text-center py-24 border border-dashed border-slate-800 rounded-2xl bg-slate-900/40">
+        <span class="text-4xl block mb-3">🧪</span>
+        <h2 class="text-base font-bold text-white">Hazardous Waste Ad-Hoc Chemical Lookup</h2>
+        <p class="text-xs text-slate-400 max-w-md mx-auto mt-1">
+          Type a waste or chemical name into the search bar above (e.g., <code class="text-emerald-400 font-mono">Methanol</code> or <code class="text-emerald-400 font-mono">Hydrochloric Acid</code>) to generate an institutional waste management plan and physical segregation bin assignment.
+        </p>
+      </div>
+    </template>
+
+    <!-- Loading State -->
+    <template x-if="isLoading">
+      <div class="text-center py-24">
+        <div class="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+        <div class="text-xs font-mono text-slate-300">Evaluating chemical hazard classification & planning...</div>
+      </div>
+    </template>
+  </main>
+
+  <!-- Slide-Over Compliance Dossier Drawer -->
+  <div x-show="drawerOpen" class="fixed inset-0 z-50 overflow-hidden" role="dialog" aria-modal="true">
+    <div class="absolute inset-0 bg-slate-950/80 backdrop-blur-sm transition-opacity" @click="drawerOpen = false"></div>
+
+    <div class="fixed inset-y-0 right-0 max-w-2xl w-full bg-slate-900 border-l border-slate-800 shadow-2xl flex flex-col">
+      <!-- Drawer Header -->
+      <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+        <div>
+          <div class="text-xs font-mono text-emerald-400 uppercase tracking-wider">Institutional Waste Plan Dossier</div>
+          <h2 class="text-lg font-bold text-white mt-0.5" x-text="activeDossier?.chemical"></h2>
+        </div>
+        <button @click="drawerOpen = false" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 text-lg">✕</button>
+      </div>
+
+      <!-- Drawer Tabs -->
+      <div class="flex border-b border-slate-800 px-6 text-xs font-medium bg-slate-950/40">
+        <button @click="activeTab = 'safety'"
+                :class="activeTab === 'safety' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400 hover:text-slate-200'"
+                class="py-3 px-3 border-b-2 transition">
+          1. Handling & Containment
+        </button>
+        <button @click="activeTab = 'emergency'"
+                :class="activeTab === 'emergency' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400 hover:text-slate-200'"
+                class="py-3 px-3 border-b-2 transition">
+          2. Spill & Emergency
+        </button>
+        <button @click="activeTab = 'regulatory'"
+                :class="activeTab === 'regulatory' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400 hover:text-slate-200'"
+                class="py-3 px-3 border-b-2 transition">
+          3. Regulatory (RCRA / HOWM)
+        </button>
+      </div>
+
+      <!-- Drawer Body -->
+      <div class="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
+        <template x-if="activeDossier">
+          <div>
+            <!-- Hazard Category Badges -->
+            <div class="flex flex-wrap gap-1.5 mb-4">
+              <template x-for="cat in activeDossier.categories" :key="cat">
+                <span :class="getBadgeClass(cat)" class="text-xs px-2.5 py-0.5 rounded font-medium border" x-text="cat"></span>
+              </template>
+            </div>
+
+            <!-- Tab 1: Safety & Handling -->
+            <div x-show="activeTab === 'safety'" class="space-y-4">
+              <div class="p-3.5 bg-red-950/50 border border-red-800 rounded-xl text-red-200 shadow-sm">
+                <div class="font-bold text-red-300 flex items-center gap-1.5 text-xs mb-1">
+                  <span>⛔</span> STRICTLY PROHIBITED ACTIONS
+                </div>
+                <p class="leading-relaxed text-[11px]" x-text="activeDossier.prohibited"></p>
+              </div>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                  <div class="text-slate-400 font-mono text-[10px] uppercase">Recommended Container</div>
+                  <div class="text-slate-200 mt-1 font-semibold text-xs" x-text="activeDossier.container"></div>
+                </div>
+                <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                  <div class="text-slate-400 font-mono text-[10px] uppercase">Storage Protocol</div>
+                  <div class="text-slate-200 mt-1 text-xs" x-text="activeDossier.storage"></div>
+                </div>
+              </div>
+
+              <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                <div class="text-slate-400 font-mono text-[10px] uppercase">Handling & Personal Protective Equipment (PPE)</div>
+                <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.ppe"></div>
+              </div>
+
+              <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                <div class="text-slate-400 font-mono text-[10px] uppercase">Segregation & Incompatibilities</div>
+                <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.segregation"></div>
+              </div>
+
+              <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                <div class="text-slate-400 font-mono text-[10px] uppercase">Container Labeling Requirements</div>
+                <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.labeling"></div>
+              </div>
+            </div>
+
+            <!-- Tab 2: Spill & Emergency -->
+            <div x-show="activeTab === 'emergency'" class="space-y-4">
+              <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                <div class="text-slate-400 font-mono text-[10px] uppercase">Spill & Emergency Procedures</div>
+                <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.spill"></div>
+              </div>
+              <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                <div class="text-slate-400 font-mono text-[10px] uppercase">Identification & Characterization</div>
+                <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.identification"></div>
+              </div>
+            </div>
+
+            <!-- Tab 3: Regulatory Compliance -->
+            <div x-show="activeTab === 'regulatory'" class="space-y-4">
+              <div class="p-3.5 bg-amber-950/50 border border-amber-800 rounded-xl text-amber-200 shadow-sm">
+                <div class="font-bold text-amber-300 flex items-center gap-1.5 text-xs mb-1">
+                  <span>📋</span> MANDATORY INSTITUTIONAL VERIFICATION
+                </div>
+                <p class="leading-relaxed text-[11px]" x-text="activeDossier.verification"></p>
+              </div>
+
+              <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                <div class="text-slate-400 font-mono text-[10px] uppercase">USEPA / RCRA Regulatory Framework (40 CFR Part 261)</div>
+                <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.usepa"></div>
+              </div>
+
+              <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                <div class="text-slate-400 font-mono text-[10px] uppercase">Indian HOWM Rules, 2016 (CPCB / SPCB Schedule)</div>
+                <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.india"></div>
+              </div>
+
+              <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                <div class="text-slate-400 font-mono text-[10px] uppercase">Treatment Framework (Pre-Disposal)</div>
+                <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.treatment"></div>
+              </div>
+
+              <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+                <div class="text-slate-400 font-mono text-[10px] uppercase">Authorized TSDF & Final Disposal</div>
+                <div class="text-slate-200 mt-1 leading-relaxed" x-text="activeDossier.disposal"></div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function hazWasteApp() {
+      return {
+        searchQuery: '',
+        isLoading: false,
+        activeDossier: null,
+        drawerOpen: false,
+        activeTab: 'safety',
+
+        async performLookup() {
+          const query = this.searchQuery.trim();
+          if (!query) return;
+
+          this.isLoading = true;
+          try {
+            const resp = await fetch('/api/lookup', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ chemical: query })
+            });
+
+            if (!resp.ok) {
+              throw new Error(`Lookup failed with status ${resp.status}`);
+            }
+
+            this.activeDossier = await resp.json();
+            this.openDrawer();
+          } catch (err) {
+            alert(`Error looking up chemical: ${err.message}`);
+          } finally {
+            this.isLoading = false;
+          }
+        },
+
+        openDrawer() {
+          this.drawerOpen = true;
+        },
+
+        getBadgeClass(category) {
+          switch(category) {
+            case 'Flammable':
+              return 'bg-orange-500/15 text-orange-300 border-orange-500/30';
+            case 'Toxic':
+              return 'bg-red-500/15 text-red-300 border-red-500/30';
+            case 'Corrosive':
+              return 'bg-purple-500/15 text-purple-300 border-purple-500/30';
+            case 'Infectious':
+              return 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30';
+            case 'Carcinogenic':
+              return 'bg-pink-500/15 text-pink-300 border-pink-500/30';
+            default:
+              return 'bg-slate-800 text-slate-300 border-slate-700';
+          }
+        }
+      }
+    }
+  </script>
+</body>
+</html>
