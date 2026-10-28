@@ -86,6 +86,26 @@ class TestApp(unittest.TestCase):
         self.assertIn('Proceed to Plan Generation', html)
         self.assertIn('EventSource', html)
 
+    def test_template_contains_in_batch_search_and_hazard_filter_pills(self):
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+
+        # In-batch search input and clear button
+        self.assertIn("batchSearchQuery", html)
+        self.assertIn("Filter chemicals in batch", html)
+
+        # Multi-hazard filter pills with live counts
+        self.assertIn("activeHazardFilters", html)
+        self.assertIn("toggleHazardFilter", html)
+        self.assertIn("filteredItems", html)
+        self.assertIn("Flammable", html)
+        self.assertIn("Toxic", html)
+        self.assertIn("Corrosive", html)
+        self.assertIn("Infectious", html)
+        self.assertIn("Carcinogenic", html)
+        self.assertIn("Review Required", html)
+
     def test_lookup_endpoint_success(self):
         import src.services as services
         fake = FakeClient()
