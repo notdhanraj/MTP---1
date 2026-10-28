@@ -45,8 +45,16 @@
     ::-webkit-scrollbar-thumb:hover { background: #475569; }
   </style>
 </head>
-<body class="bg-slate-950 text-slate-100 font-sans antialiased min-h-screen pb-24 selection:bg-emerald-500/30 selection:text-emerald-200"
-      x-data="prototypeApp()" x-cloak>
+<!--
+  PROTOTYPE: Three variants of the Hazardous Waste Management Platform
+  Switchable via `?variant=` URL search param (A, B, or C) or the floating bottom bar.
+  Keyboard: Use Left/Right Arrow keys to cycle between variants.
+-->
+<body class="bg-slate-950 text-slate-100 font-sans antialiased min-h-screen pb-28 selection:bg-emerald-500/30 selection:text-emerald-200"
+      x-data="prototypeApp()"
+      @keydown.window="handleKeydown($event)"
+      x-init="initApp()"
+      x-cloak>
 
   <!-- Prototype Watermark Banner -->
   <div class="bg-amber-500/10 border-b border-amber-500/20 text-amber-300 text-xs py-1 px-4 text-center font-mono flex items-center justify-center gap-2">
@@ -170,9 +178,9 @@
     </div>
 
     <!-- ========================================================================= -->
-    <!-- VARIATION 1: Command Console (Dense High-Efficiency Table + Slide Drawer) -->
+    <!-- VARIATION A: Command Console (Dense High-Efficiency Table + Slide Drawer) -->
     <!-- ========================================================================= -->
-    <div x-show="currentVariant === 'v1'">
+    <div x-show="currentVariant === 'A'">
       <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-2xl">
         <div class="px-4 py-3 bg-slate-950/60 border-b border-slate-800 flex items-center justify-between">
           <div class="flex items-center gap-2">
@@ -236,9 +244,9 @@
     </div>
 
     <!-- ========================================================================= -->
-    <!-- VARIATION 2: Split-Pane Lab Workbench (Side-by-Side Permanent Dual View)  -->
+    <!-- VARIATION B: Split-Pane Lab Workbench (Side-by-Side Permanent Dual View)  -->
     <!-- ========================================================================= -->
-    <div x-show="currentVariant === 'v2'">
+    <div x-show="currentVariant === 'B'">
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         <!-- Left List Pane (5 cols) -->
         <div class="lg:col-span-5 space-y-2">
@@ -387,9 +395,9 @@
     </div>
 
     <!-- ========================================================================= -->
-    <!-- VARIATION 3: Modular Physical Segregation Grid (Visual Laboratory Bins)   -->
+    <!-- VARIATION C: Modular Physical Segregation Grid (Visual Laboratory Bins)   -->
     <!-- ========================================================================= -->
-    <div x-show="currentVariant === 'v3'">
+    <div x-show="currentVariant === 'C'">
       <div class="space-y-6">
         <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl text-xs text-slate-300 flex items-center justify-between">
           <div class="flex items-center gap-2">
@@ -625,31 +633,53 @@
   </div>
 
   <!-- ========================================================================= -->
-  <!-- FLOATING PROTOTYPE BAR (Prototype Skill Requirement)                     -->
+  <!-- FLOATING PROTOTYPE SWITCHER (UI.md Standard)                              -->
   <!-- ========================================================================= -->
-  <div class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 border border-slate-700 shadow-2xl rounded-full px-3 py-2 flex items-center gap-2 backdrop-blur text-xs">
-    <span class="font-mono text-slate-400 pl-2 text-[11px] uppercase tracking-wider font-semibold">UI Variant:</span>
-    <button @click="switchVariant('v1')"
-            :class="currentVariant === 'v1' ? 'bg-emerald-600 text-white font-semibold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
-            class="px-3 py-1.5 rounded-full transition text-xs">
-      1: Command Console
+  <nav class="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 border border-slate-700 shadow-2xl rounded-full px-4 py-2 flex items-center gap-3 backdrop-blur-md text-xs ring-1 ring-white/10"
+       aria-label="Prototype variant switcher">
+    <!-- Left Arrow: cycles to previous variant (wraps around) -->
+    <button @click="cycleVariant(-1)"
+            title="Previous variant (Left Arrow key)"
+            class="w-7 h-7 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center justify-center transition hover:text-white border border-slate-700">
+      ←
     </button>
-    <button @click="switchVariant('v2')"
-            :class="currentVariant === 'v2' ? 'bg-emerald-600 text-white font-semibold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
-            class="px-3 py-1.5 rounded-full transition text-xs">
-      2: Split Workbench
+
+    <!-- Variant Label: key + name -->
+    <div class="flex items-center gap-2 px-1">
+      <span class="font-mono text-emerald-400 font-bold bg-emerald-950/80 border border-emerald-800 px-2 py-0.5 rounded text-[11px]" x-text="`Variant ${currentVariant}`"></span>
+      <span class="font-medium text-slate-200 text-xs hidden sm:inline" x-text="getCurrentVariantName()"></span>
+    </div>
+
+    <!-- Quick Pill Selectors -->
+    <div class="flex items-center gap-1 border-l border-r border-slate-800 px-2">
+      <button @click="switchVariant('A')"
+              :class="currentVariant === 'A' ? 'bg-emerald-600 text-white font-semibold' : 'text-slate-400 hover:text-white'"
+              class="px-2.5 py-1 rounded-md text-xs transition">A: Console</button>
+      <button @click="switchVariant('B')"
+              :class="currentVariant === 'B' ? 'bg-emerald-600 text-white font-semibold' : 'text-slate-400 hover:text-white'"
+              class="px-2.5 py-1 rounded-md text-xs transition">B: Workbench</button>
+      <button @click="switchVariant('C')"
+              :class="currentVariant === 'C' ? 'bg-emerald-600 text-white font-semibold' : 'text-slate-400 hover:text-white'"
+              class="px-2.5 py-1 rounded-md text-xs transition">C: Bins Grid</button>
+    </div>
+
+    <!-- Right Arrow: cycles forward (wraps around) -->
+    <button @click="cycleVariant(1)"
+            title="Next variant (Right Arrow key)"
+            class="w-7 h-7 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center justify-center transition hover:text-white border border-slate-700">
+      →
     </button>
-    <button @click="switchVariant('v3')"
-            :class="currentVariant === 'v3' ? 'bg-emerald-600 text-white font-semibold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
-            class="px-3 py-1.5 rounded-full transition text-xs">
-      3: Segregation Cards
-    </button>
-  </div>
+  </nav>
 
   <script>
     function prototypeApp() {
       return {
-        currentVariant: 'v1',
+        currentVariant: 'A',
+        variants: [
+          { key: 'A', name: 'Dense Command Console (Table + Drawer)' },
+          { key: 'B', name: 'Split-Pane Lab Workbench (Side-by-Side)' },
+          { key: 'C', name: 'Physical Segregation Bins (Card Grid)' }
+        ],
         activeFilter: 'all',
         activeDossierTab: 'safety',
         drawerOpen: false,
@@ -830,12 +860,50 @@
           return list;
         },
 
-        init() {
+        initApp() {
+          const urlParams = new URLSearchParams(window.location.search);
+          const variantParam = (urlParams.get('variant') || '').toUpperCase();
+          if (['A', 'B', 'C'].includes(variantParam)) {
+            this.currentVariant = variantParam;
+          } else {
+            this.currentVariant = 'A';
+          }
           this.selectedItem = this.chemicals[0];
+        },
+
+        handleKeydown(e) {
+          if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
+          if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            this.cycleVariant(-1);
+          } else if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            this.cycleVariant(1);
+          }
+        },
+
+        getCurrentVariantName() {
+          const v = this.variants.find(x => x.key === this.currentVariant);
+          return v ? v.name : '';
         },
 
         switchVariant(v) {
           this.currentVariant = v;
+          this.syncUrl();
+        },
+
+        cycleVariant(direction) {
+          const order = ['A', 'B', 'C'];
+          const currentIndex = order.indexOf(this.currentVariant);
+          const nextIndex = (currentIndex + direction + order.length) % order.length;
+          this.currentVariant = order[nextIndex];
+          this.syncUrl();
+        },
+
+        syncUrl() {
+          const url = new URL(window.location.href);
+          url.searchParams.set('variant', this.currentVariant);
+          window.history.replaceState({}, '', url.toString());
         },
 
         openDossier(item) {
