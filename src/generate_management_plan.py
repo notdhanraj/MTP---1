@@ -95,7 +95,11 @@ def get_unique_chemicals(df):
     return list(chemicals.values())
 
 
-def make_plan(chemical, categories):
+def make_plan(chemical, categories, client=None):
+    active_client = client if client is not None else globals().get("client")
+    if active_client is None:
+        raise RuntimeError("OpenAI client is not configured.")
+
     category_text = ", ".join(categories)
 
     prompt = f"""
@@ -163,7 +167,7 @@ For each field provide concise but practically useful institutional
 guidance.
 """
 
-    response = client.responses.parse(
+    response = active_client.responses.parse(
         model=MODEL,
         input=prompt,
         reasoning={"effort": REASONING_EFFORT},

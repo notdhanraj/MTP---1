@@ -125,6 +125,33 @@ class TestOpenAIMigration(unittest.TestCase):
         self.assertIn('Flammable, Toxic', call['input'])
         self.assertNotIn('temperature', call)
 
+    def test_make_plan_accepts_explicit_client(self):
+        module = self.import_script(ROOT / 'generate_management_plan.py', 'plan_explicit_mod')
+        custom_client = FakeClient()
+        expected = module.ManagementPlan(
+            chemical='Acetone',
+            identification_and_characterization='desc',
+            segregation_and_incompatibilities='seg',
+            recommended_container='can',
+            labeling_requirements='lbl',
+            storage_requirements='store',
+            handling_and_ppe='ppe',
+            spill_and_emergency_management='spill',
+            treatment_framework='treat',
+            final_disposal_framework='disp',
+            usepa_framework='epa',
+            indian_framework='india',
+            prohibited_or_unsafe_actions='none',
+            verification_required='ver',
+        )
+        custom_client.responses.parsed = expected
+
+        result = module.make_plan('Acetone', ['Flammable'], client=custom_client)
+
+        self.assertIs(result, expected)
+        self.assertEqual(len(custom_client.responses.calls), 1)
+        self.assertIn('Acetone', custom_client.responses.calls[0]['input'])
+
     def test_env_loader_does_not_overwrite_existing_value(self):
         module = self.import_script(ROOT / 'classify_waste.py', 'classify_env_mod')
         with tempfile.TemporaryDirectory() as tmp_dir:
