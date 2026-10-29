@@ -181,6 +181,9 @@ class TestAppUploadEndpoint(unittest.TestCase):
         buf.seek(0)
         return buf
 
+    def _create_test_excel(self, chemicals: list[str]) -> io.BytesIO:
+        return self._create_excel("Hazardous Waste", chemicals)
+
     def test_upload_valid_excel_success(self):
         import src.services as services
         fake_client = FakeClient()
@@ -396,6 +399,64 @@ class TestAppUploadEndpoint(unittest.TestCase):
         self.assertEqual(meta_data["status"], "completed")
         self.assertIsInstance(meta_data["dossiers"], dict)
         self.assertGreater(len(meta_data["dossiers"]), 0)
+
+    def test_retry_endpoint_success_and_bin_recalculation(self):
+        from src.app import app
+        app.state.client = FakeClient()
+        excel_bytes = self._create_test_excel(['Mystery Chemical'])
+        upload_resp = self.client.post(
+            "/api/upload",
+            files={"file": ("inventory.xlsx", excel_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            data={"pause_after_classification": "false"}
+        )
+        run_id = upload_resp.json()["run_id"]
+
+        # Run stream to completion so dossiers are saved
+        self.client.get(f"/api/runs/{run_id}/stream")
+
+        retry_resp = self.client.post(
+            f"/api/runs/{run_id}/retry",
+            json={"original_name": "Mystery Chemical", "new_name": "Acetone"}
+        )
+        self.assertEqual(retry_resp.status_code, 200)
+        data = retry_resp.json()
+        self.assertEqual(data["status"], "success")
+        self.assertEqual(data["chemical"], "Acetone")
+        self.assertEqual(data["original_name"], "Mystery Chemical")
+        self.assertIn("dossier", data)
+        self.assertIn("bin_counts", data)
+
+    def test_retry_endpoint_duplicate_collision_returns_422(self):
+        from src.app import app
+        app.state.client = FakeClient()
+        excel_bytes = self._create_test_excel(['Acetone', 'Mystery Chemical'])
+        upload_resp = self.client.post(
+            "/api/upload",
+            files={"file": ("inventory.xlsx", excel_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+        )
+        run_id = upload_resp.json()["run_id"]
+        self.client.get(f"/api/runs/{run_id}/stream")
+
+        retry_resp = self.client.post(
+            f"/api/runs/{run_id}/retry",
+            json={"original_name": "Mystery Chemical", "new_name": "Acetone"}
+        )
+        self.assertEqual(retry_resp.status_code, 422)
+        self.assertIn("already present in this batch", retry_resp.json()["detail"])
+
+    def test_retry_endpoint_empty_name_returns_422(self):
+        retry_resp = self.client.post(
+            "/api/runs/any_run_id/retry",
+            json={"original_name": "Acetone", "new_name": "   "}
+        )
+        self.assertEqual(retry_resp.status_code, 422)
+
+    def test_retry_endpoint_unknown_run_returns_404(self):
+        retry_resp = self.client.post(
+            "/api/runs/nonexistent_run_99999/retry",
+            json={"original_name": "Acetone", "new_name": "Methanol"}
+        )
+        self.assertEqual(retry_resp.status_code, 404)
 
 
 def __getattr__(name: str):

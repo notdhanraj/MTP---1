@@ -4,7 +4,13 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFi
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-from src.models import BatchQueuedResponse, BatchRunResponse, WasteManagementDossier
+from src.models import (
+    BatchQueuedResponse,
+    BatchRunResponse,
+    RetryItemRequest,
+    RetryItemResponse,
+    WasteManagementDossier,
+)
 import src.services as services
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -117,6 +123,43 @@ async def stream_run_events(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@app.post("/api/runs/{run_id}/retry", response_model=RetryItemResponse)
+async def api_retry_chemical_item(run_id: str, payload: RetryItemRequest):
+    """
+    Remediates an ambiguous or failed chemical in a batch run by re-evaluating with
+    a refined or retried chemical name, atomically updating run metadata and bin counts.
+    """
+    orig_name = payload.original_name.strip()
+    new_name = payload.new_name.strip()
+
+    if not orig_name or not new_name:
+        raise HTTPException(status_code=422, detail="Chemical names cannot be empty.")
+
+    try:
+        dossier, bin_counts = services.remediate_batch_item(
+            run_id=run_id,
+            original_name=orig_name,
+            new_name=new_name,
+            client=app.state.client
+        )
+        return RetryItemResponse(
+            status="success",
+            chemical=dossier.chemical,
+            original_name=orig_name,
+            dossier=dossier,
+            bin_counts=bin_counts
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error retrying chemical '{new_name}': {str(e)}"
+        )
 
 
 
