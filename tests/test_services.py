@@ -14,6 +14,9 @@ from src.services import (
     process_excel_batch,
     remediate_batch_item,
     stream_batch_events,
+    generate_batch_excel,
+    list_runs,
+    get_run_details,
 )
 
 
@@ -657,6 +660,324 @@ class TestBatchIngestionServices(unittest.TestCase):
             self.assertEqual(bin_counts["Flammable Solvents"], 1)
             self.assertEqual(bin_counts["Review Queue"], 0)
 
+
+
+class TestBatchExcelExportAndRunHistoryServices(unittest.TestCase):
+    def test_generate_batch_excel_creates_3_sheet_workbook(self):
+        import openpyxl
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            run_id = "test_run_excel"
+            run_dir = tmp_path / run_id
+            run_dir.mkdir(parents=True)
+
+            meta_data = {
+                "run_id": run_id,
+                "filename": "lab_chemicals.xlsx",
+                "timestamp": "2026-10-29T10:00:00",
+                "status": "completed",
+                "chemicals": ["Methanol", "Hydrochloric Acid", "Mystery Chem"],
+                "bin_counts": {
+                    "Flammable Solvents": 1,
+                    "Inorganic Acids": 1,
+                    "Review Queue": 1,
+                },
+                "classifications": {
+                    "Methanol": {"categories": ["Flammable", "Toxic"], "bin": "Flammable Solvents"},
+                    "Hydrochloric Acid": {"categories": ["Corrosive"], "bin": "Inorganic Acids"},
+                    "Mystery Chem": {"categories": [], "bin": "Review Queue"},
+                },
+                "dossiers": {
+                    "Methanol": {
+                        "chemical": "Methanol",
+                        "bin": "Flammable Solvents",
+                        "categories": ["Flammable", "Toxic"],
+                        "container": "Glass Bottle",
+                        "storage": "Flammables cabinet",
+                        "ppe": "Nitrile gloves",
+                        "segregation": "Keep away from oxidizers",
+                        "labeling": "Flammable Liquid",
+                        "spill": "Absorb with inert pads",
+                        "identification": "Solvent waste",
+                        "prohibited": "Do not pour down drain",
+                        "verification": "Check pH",
+                        "usepa": "D001",
+                        "india": "Schedule II",
+                        "treatment": "Incineration",
+                        "disposal": "Authorized TSDF",
+                        "review_required": False,
+                    },
+                    "Hydrochloric Acid": {
+                        "chemical": "Hydrochloric Acid",
+                        "bin": "Inorganic Acids",
+                        "categories": ["Corrosive"],
+                        "container": "Acid-resistant HDPE container",
+                        "storage": "Dedicated acid locker",
+                        "ppe": "Acid apron and faceshield",
+                        "segregation": "Isolate from bases and cyanide",
+                        "labeling": "Corrosive Acid Waste",
+                        "spill": "Neutralize with sodium bicarbonate",
+                        "identification": "Mineral acid stream",
+                        "prohibited": "Do not mix with flammables",
+                        "verification": "Test with pH paper",
+                        "usepa": "D002",
+                        "india": "Schedule II",
+                        "treatment": "Neutralization",
+                        "disposal": "Permitted facility",
+                        "review_required": False,
+                    },
+                    "Mystery Chem": {
+                        "chemical": "Mystery Chem",
+                        "bin": "Review Queue",
+                        "categories": [],
+                        "container": "Secondary containment bin",
+                        "storage": "Quarantine bench",
+                        "ppe": "Standard PPE",
+                        "segregation": "Do not mix",
+                        "labeling": "Unidentified Chemical",
+                        "spill": "Contain immediately",
+                        "identification": "Unknown compound",
+                        "prohibited": "Do not discard",
+                        "verification": "EHS Characterization required",
+                        "usepa": "Pending",
+                        "india": "Pending",
+                        "treatment": "Hold for testing",
+                        "disposal": "Hold for testing",
+                        "review_required": True,
+                        "review_reason": "Classification failed or requires human review",
+                    },
+                },
+            }
+
+            with open(run_dir / "meta.json", "w", encoding="utf-8") as f:
+                json.dump(meta_data, f, indent=2)
+
+            excel_path = generate_batch_excel(run_id, runs_dir=tmp_path)
+            self.assertTrue(excel_path.exists())
+            self.assertEqual(excel_path.name, "output.xlsx")
+
+            wb = openpyxl.load_workbook(excel_path)
+            self.assertEqual(wb.sheetnames, ["Management Plan", "Classification", "Review Required"])
+
+            ws_mp = wb["Management Plan"]
+            headers = [cell.value for cell in ws_mp[1]]
+            self.assertEqual(len(headers), 14)
+            self.assertEqual(headers[0], "Chemical")
+            self.assertEqual(headers[1], "Recommended Container")
+            self.assertEqual(headers[13], "Verification Required")
+            self.assertEqual(ws_mp.max_row, 4)  # header + 3 chemicals
+
+            ws_clf = wb["Classification"]
+            clf_headers = [cell.value for cell in ws_clf[1]]
+            self.assertEqual(clf_headers, ["Flammable", "Carcinogenic", "Infectious", "Toxic", "Corrosive"])
+
+            ws_rev = wb["Review Required"]
+            rev_headers = [cell.value for cell in ws_rev[1]]
+            self.assertEqual(rev_headers, ["Chemical", "Review Reason"])
+            self.assertEqual(ws_rev.max_row, 2)  # header + Mystery Chem
+            self.assertEqual(ws_rev.cell(row=2, column=1).value, "Mystery Chem")
+
+    def test_list_runs_and_get_run_details(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            run_id = "run_2026-10-29_090000"
+            run_dir = tmp_path / run_id
+            run_dir.mkdir(parents=True)
+
+            meta_data = {
+                "run_id": run_id,
+                "filename": "inventory.xlsx",
+                "timestamp": "2026-10-29T09:00:00",
+                "status": "completed",
+                "total_count": 1,
+                "chemicals": ["Methanol"],
+                "bin_counts": {"Flammable Solvents": 1},
+                "dossiers": {
+                    "Methanol": {
+                        "chemical": "Methanol",
+                        "bin": "Flammable Solvents",
+                        "categories": ["Flammable"],
+                        "container": "Glass Bottle",
+                        "storage": "Cabinet",
+                        "ppe": "Gloves",
+                        "segregation": "Separate",
+                        "labeling": "Flammable",
+                        "spill": "Pads",
+                        "identification": "Solvent",
+                        "prohibited": "Drain",
+                        "verification": "None",
+                        "usepa": "D001",
+                        "india": "Sched II",
+                        "treatment": "Incineration",
+                        "disposal": "TSDF",
+                    }
+                },
+            }
+            with open(run_dir / "meta.json", "w", encoding="utf-8") as f:
+                json.dump(meta_data, f, indent=2)
+
+            runs = list_runs(runs_dir=tmp_path)
+            self.assertEqual(len(runs), 1)
+            self.assertEqual(runs[0]["run_id"], run_id)
+            self.assertEqual(runs[0]["filename"], "inventory.xlsx")
+            self.assertEqual(runs[0]["total_count"], 1)
+
+            details = get_run_details(run_id, runs_dir=tmp_path)
+            self.assertEqual(details.run_id, run_id)
+            self.assertEqual(len(details.items), 1)
+            self.assertEqual(details.items[0].chemical, "Methanol")
+
+    def test_generate_batch_excel_errors(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            # Run not found
+            with self.assertRaises(FileNotFoundError):
+                generate_batch_excel("nonexistent_run", runs_dir=tmp_path)
+
+            # Run in progress
+            in_progress_dir = tmp_path / "in_progress_run"
+            in_progress_dir.mkdir()
+            with open(in_progress_dir / "meta.json", "w", encoding="utf-8") as f:
+                json.dump({"status": "classifying"}, f)
+
+            with self.assertRaises(ValueError) as ctx:
+                generate_batch_excel("in_progress_run", runs_dir=tmp_path)
+            self.assertIn("still in progress", str(ctx.exception))
+
+    def test_list_runs_nonexistent_dir(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir) / "missing_folder"
+            self.assertEqual(list_runs(runs_dir=tmp_path), [])
+
+    def test_stream_batch_events_creates_output_excel(self):
+        fake_client = FakeClient()
+        classification = HazardClassification(
+            flammable=True, carcinogenic=False, infectious=False, toxic=False, corrosive=False
+        )
+        plan = ManagementPlan(
+            chemical='Ethanol',
+            identification_and_characterization='Alcohol solvent',
+            segregation_and_incompatibilities='Keep away from oxidizers',
+            recommended_container='Glass Bottle',
+            labeling_requirements='FLAMMABLE',
+            storage_requirements='Flammables cabinet',
+            handling_and_ppe='Nitrile gloves',
+            spill_and_emergency_management='Absorb with pads',
+            treatment_framework='Thermal oxidation',
+            final_disposal_framework='Incineration at TSDF',
+            usepa_framework='D001',
+            indian_framework='HOWM Schedule II',
+            prohibited_or_unsafe_actions='No drain disposal',
+            verification_required='Verify flash point',
+        )
+        def side_effect(**kwargs):
+            if kwargs['text_format'] is HazardClassification:
+                return types.SimpleNamespace(output_parsed=classification)
+            return types.SimpleNamespace(output_parsed=plan)
+        fake_client.responses.parse = side_effect
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            runs_path = Path(tmp_dir)
+            df = pd.DataFrame({"Hazardous Waste": ["Ethanol"]})
+            excel_bytes = io.BytesIO()
+            df.to_excel(excel_bytes, index=False)
+            excel_bytes = excel_bytes.getvalue()
+
+            queued = initialize_batch_run(
+                excel_bytes, 'test_ethanol.xlsx', pause_after_classification=False, runs_dir=runs_path
+            )
+
+            events = list(stream_batch_events(queued.run_id, runs_dir=runs_path, client=fake_client))
+            complete_event = [e for e in events if e['type'] == 'complete']
+            self.assertTrue(len(complete_event) > 0)
+
+            excel_path = runs_path / queued.run_id / "output.xlsx"
+            self.assertTrue(excel_path.exists())
+
+    def test_remediate_batch_item_refreshes_output_excel(self):
+        fake_client = FakeClient()
+        classification = HazardClassification(
+            flammable=True, carcinogenic=False, infectious=False, toxic=False, corrosive=False
+        )
+        plan = ManagementPlan(
+            chemical='Acetone',
+            identification_and_characterization='Ketone solvent',
+            segregation_and_incompatibilities='Keep away from oxidizers',
+            recommended_container='Safety can',
+            labeling_requirements='FLAMMABLE',
+            storage_requirements='Flammables cabinet',
+            handling_and_ppe='Nitrile gloves',
+            spill_and_emergency_management='Absorb with pads',
+            treatment_framework='Thermal oxidation',
+            final_disposal_framework='Incineration at TSDF',
+            usepa_framework='D001',
+            indian_framework='HOWM Schedule II',
+            prohibited_or_unsafe_actions='No drain disposal',
+            verification_required='Verify flash point',
+        )
+        def side_effect(**kwargs):
+            if kwargs['text_format'] is HazardClassification:
+                return types.SimpleNamespace(output_parsed=classification)
+            return types.SimpleNamespace(output_parsed=plan)
+        fake_client.responses.parse = side_effect
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            runs_path = Path(tmp_dir)
+            run_id = "remediate_excel_test"
+            run_folder = runs_path / run_id
+            run_folder.mkdir(parents=True, exist_ok=True)
+
+            meta = {
+                "run_id": run_id,
+                "chemicals": ["Unknown"],
+                "status": "completed",
+                "dossiers": {
+                    "Unknown": {
+                        "chemical": "Unknown",
+                        "review_required": True,
+                        "bin": "Review Queue",
+                        "segregation_bin": "Review Queue",
+                        "container": "Bottle",
+                        "storage": "Hood",
+                        "ppe": "Gloves",
+                        "segregation": "None",
+                        "labeling": "Unknown",
+                        "spill": "Absorb",
+                        "identification": "Unknown",
+                        "prohibited": "None",
+                        "verification": "Check",
+                        "usepa": "None",
+                        "india": "None",
+                        "treatment": "None",
+                        "disposal": "None",
+                    }
+                },
+                "bin_counts": {"Review Queue": 1}
+            }
+            with open(run_folder / "meta.json", "w", encoding="utf-8") as f:
+                json.dump(meta, f)
+
+            generate_batch_excel(run_id, runs_dir=runs_path)
+            excel_path = run_folder / "output.xlsx"
+            self.assertTrue(excel_path.exists())
+
+            # Remediate item
+            remediate_batch_item(
+                run_id=run_id,
+                original_name="Unknown",
+                new_name="Acetone",
+                runs_dir=runs_path,
+                client=fake_client
+            )
+
+            # Check that output.xlsx was updated
+            import openpyxl
+            wb = openpyxl.load_workbook(excel_path)
+            ws_mp = wb["Management Plan"]
+            self.assertEqual(ws_mp.cell(row=2, column=1).value, "Acetone")
+            ws_rev = wb["Review Required"]
+            self.assertEqual(ws_rev.max_row, 1)  # Only header remaining!
 
 
 if __name__ == '__main__':

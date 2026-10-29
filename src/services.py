@@ -458,6 +458,11 @@ def stream_batch_events(
         meta["status"] = "completed"
         _save_meta()
 
+        try:
+            generate_batch_excel(run_id, target_runs_dir)
+        except Exception as e:
+            logger.warning(f"Error generating Excel for run '{run_id}': {e}")
+
         yield {
             "type": "complete",
             "status": "completed",
@@ -569,6 +574,181 @@ def remediate_batch_item(
         json.dump(meta, f, indent=2)
     temp_meta_path.replace(meta_path)
 
+    try:
+        generate_batch_excel(run_id, target_runs_dir)
+    except Exception as e:
+        logger.warning(f"Failed to refresh batch excel for run '{run_id}': {e}")
+
     return dossier, recalculated_counts
+
+
+def generate_batch_excel(run_id: str, runs_dir: Path | None = None) -> Path:
+    target_runs_dir = runs_dir if runs_dir is not None else DEFAULT_RUNS_DIR
+    run_dir = target_runs_dir / run_id
+    meta_path = run_dir / "meta.json"
+
+    if not meta_path.exists():
+        raise FileNotFoundError(f"Run '{run_id}' not found.")
+
+    with open(meta_path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+
+    if meta.get("status") not in ("completed", None):
+        raise ValueError(f"Run '{run_id}' is still in progress.")
+
+    chemicals = meta.get("chemicals", [])
+    dossiers = meta.get("dossiers", {})
+    classifications = meta.get("classifications", {})
+
+    # Sheet 1: Management Plan (14 fields matching institutional standard)
+    management_columns = [
+        "Chemical",
+        "Recommended Container",
+        "Storage Requirements",
+        "Handling & PPE",
+        "Segregation & Incompatibilities",
+        "Labeling Requirements",
+        "Spill & Emergency Management",
+        "Identification & Characterization",
+        "USEPA RCRA Framework",
+        "Indian HOWM Framework",
+        "Treatment Framework",
+        "Final Disposal Framework",
+        "Prohibited / Unsafe Actions",
+        "Verification Required",
+    ]
+
+    management_rows = []
+    for chem in chemicals:
+        dos = dossiers.get(chem, {})
+        management_rows.append({
+            "Chemical": chem,
+            "Recommended Container": dos.get("container", ""),
+            "Storage Requirements": dos.get("storage", ""),
+            "Handling & PPE": dos.get("ppe", ""),
+            "Segregation & Incompatibilities": dos.get("segregation", ""),
+            "Labeling Requirements": dos.get("labeling", ""),
+            "Spill & Emergency Management": dos.get("spill", ""),
+            "Identification & Characterization": dos.get("identification", ""),
+            "USEPA RCRA Framework": dos.get("usepa", ""),
+            "Indian HOWM Framework": dos.get("india", ""),
+            "Treatment Framework": dos.get("treatment", ""),
+            "Final Disposal Framework": dos.get("disposal", ""),
+            "Prohibited / Unsafe Actions": dos.get("prohibited", ""),
+            "Verification Required": dos.get("verification", ""),
+        })
+
+    # Sheet 2: Classification (5 hazard category columns matching classify_waste.py)
+    hazard_categories = ["Flammable", "Carcinogenic", "Infectious", "Toxic", "Corrosive"]
+    category_map = {cat: [] for cat in hazard_categories}
+    for chem in chemicals:
+        clf = classifications.get(chem, {})
+        cats = clf.get("categories", [])
+        if not cats and "classification" in clf:
+            clf_data = clf.get("classification", {})
+            cats = [k.capitalize() for k, val in clf_data.items() if val]
+        if not cats:
+            cats = dossiers.get(chem, {}).get("categories", [])
+        if not cats:
+            dos = dossiers.get(chem, {})
+            cats = [cat for cat in hazard_categories if dos.get(cat.lower())]
+
+        for cat in cats:
+            c_norm = cat.capitalize()
+            if c_norm in category_map and chem not in category_map[c_norm]:
+                category_map[c_norm].append(chem)
+
+    max_len = max([len(v) for v in category_map.values()] or [0])
+    clf_output = {}
+    for cat in hazard_categories:
+        items = category_map[cat]
+        clf_output[cat] = items + [None] * (max_len - len(items))
+
+    # Sheet 3: Review Required
+    review_rows = []
+    for chem in chemicals:
+        dos = dossiers.get(chem, {})
+        if dos.get("review_required") or dos.get("bin") == "Review Queue" or dos.get("segregation_bin") == "Review Queue":
+            review_rows.append({
+                "Chemical": chem,
+                "Review Reason": dos.get("review_reason") or "Classification or plan requires human review",
+            })
+
+    output_path = run_dir / "output.xlsx"
+    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+        pd.DataFrame(management_rows, columns=management_columns).to_excel(
+            writer, sheet_name="Management Plan", index=False
+        )
+        pd.DataFrame(clf_output, columns=hazard_categories).to_excel(
+            writer, sheet_name="Classification", index=False
+        )
+        pd.DataFrame(review_rows if review_rows else [], columns=["Chemical", "Review Reason"]).to_excel(
+            writer, sheet_name="Review Required", index=False
+        )
+
+    return output_path
+
+
+def list_runs(runs_dir: Path | None = None) -> list[dict]:
+    target_runs_dir = runs_dir if runs_dir is not None else DEFAULT_RUNS_DIR
+    if not target_runs_dir.exists():
+        return []
+
+    summaries = []
+    for entry in target_runs_dir.iterdir():
+        if entry.is_dir():
+            meta_path = entry / "meta.json"
+            if meta_path.exists():
+                try:
+                    with open(meta_path, "r", encoding="utf-8") as f:
+                        meta = json.load(f)
+                    total_count = meta.get("total_count")
+                    if total_count is None:
+                        total_count = len(meta.get("chemicals", []))
+                    summaries.append({
+                        "run_id": meta.get("run_id", entry.name),
+                        "filename": meta.get("filename", "inventory.xlsx"),
+                        "timestamp": meta.get("timestamp", entry.name),
+                        "total_count": total_count,
+                        "bin_counts": meta.get("bin_counts", {}),
+                        "status": meta.get("status", "completed"),
+                    })
+                except Exception:
+                    continue
+
+    summaries.sort(key=lambda s: s.get("timestamp", s.get("run_id")), reverse=True)
+    return summaries
+
+
+def get_run_details(run_id: str, runs_dir: Path | None = None) -> BatchRunResponse:
+    target_runs_dir = runs_dir if runs_dir is not None else DEFAULT_RUNS_DIR
+    run_dir = target_runs_dir / run_id
+    meta_path = run_dir / "meta.json"
+
+    if not meta_path.exists():
+        raise FileNotFoundError(f"Run '{run_id}' not found.")
+
+    with open(meta_path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+
+    chemicals = meta.get("chemicals", [])
+    dossiers = meta.get("dossiers", {})
+    items = []
+    for chem in chemicals:
+        if chem in dossiers:
+            items.append(WasteManagementDossier(**dossiers[chem]))
+
+    total = meta.get("total_count")
+    if total is None:
+        total = len(items)
+
+    return BatchRunResponse(
+        run_id=meta.get("run_id", run_id),
+        filename=meta.get("filename", "inventory.xlsx"),
+        total_count=total,
+        bin_counts=meta.get("bin_counts", {}),
+        items=items,
+    )
+
 
 

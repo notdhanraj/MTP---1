@@ -58,6 +58,15 @@ class BatchRunResponse(BaseModel):
     items: list[WasteManagementDossier] = Field(default_factory=list)
 
 
+class RunSummaryResponse(BaseModel):
+    run_id: str
+    filename: str
+    timestamp: str
+    total_count: int
+    bin_counts: dict[str, int] = Field(default_factory=dict)
+    status: str = "completed"
+
+
 class BatchQueuedResponse(BaseModel):
     run_id: str
     filename: str
