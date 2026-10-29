@@ -117,6 +117,48 @@ class TestModels(unittest.TestCase):
         self.assertFalse(minimal.pause_after_classification)
         self.assertEqual(minimal.status, "queued")
 
+    def test_retry_models_schema(self):
+        from src.models import RetryItemRequest, RetryItemResponse, WasteManagementDossier
+
+        req = RetryItemRequest(original_name="Mystery Acid", new_name="Hydrochloric Acid")
+        self.assertEqual(req.original_name, "Mystery Acid")
+        self.assertEqual(req.new_name, "Hydrochloric Acid")
+
+        dossier = WasteManagementDossier(
+            chemical="Hydrochloric Acid",
+            flammable=False,
+            carcinogenic=False,
+            infectious=False,
+            toxic=False,
+            corrosive=True,
+            segregation_bin="Inorganic Acids",
+            identification="HCl",
+            segregation="Keep away from bases",
+            container="Polyethylene drum",
+            labeling="CORROSIVE",
+            storage="Acid cabinet",
+            ppe="Gloves, goggles",
+            spill="Neutralize with sodium bicarbonate",
+            treatment="Neutralization",
+            disposal="TSDF inorganic acid stream",
+            usepa="D002",
+            india="Schedule II",
+            prohibited="Do not pour into sink",
+            verification="Verify pH",
+            review_required=False,
+            review_reason=None
+        )
+        resp = RetryItemResponse(
+            status="success",
+            chemical="Hydrochloric Acid",
+            original_name="Mystery Acid",
+            dossier=dossier,
+            bin_counts={"Inorganic Acids": 1, "Review Queue": 0}
+        )
+        self.assertEqual(resp.status, "success")
+        self.assertEqual(resp.dossier.chemical, "Hydrochloric Acid")
+
+
 
 if __name__ == '__main__':
     unittest.main()

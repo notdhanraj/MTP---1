@@ -12,6 +12,7 @@ from src.services import (
     initialize_batch_run,
     lookup_chemical,
     process_excel_batch,
+    remediate_batch_item,
     stream_batch_events,
 )
 
@@ -390,6 +391,272 @@ class TestBatchIngestionServices(unittest.TestCase):
             valid_dossier = [item for item in complete_event['items'] if item['chemical'] == 'ValidChem'][0]
             self.assertEqual(valid_dossier['bin'], 'Flammable Solvents')
             self.assertFalse(valid_dossier['review_required'])
+
+    def test_remediate_batch_item_success(self):
+        fake_client = FakeClient()
+        classification = HazardClassification(
+            flammable=True, carcinogenic=False, infectious=False, toxic=False, corrosive=False
+        )
+        plan = ManagementPlan(
+            chemical='Acetone',
+            identification_and_characterization='Ketone solvent',
+            segregation_and_incompatibilities='Keep away from oxidizers',
+            recommended_container='Safety can',
+            labeling_requirements='FLAMMABLE',
+            storage_requirements='Flammables cabinet',
+            handling_and_ppe='Nitrile gloves',
+            spill_and_emergency_management='Absorb with vermiculite',
+            treatment_framework='Thermal oxidation',
+            final_disposal_framework='Incineration at TSDF',
+            usepa_framework='D001',
+            indian_framework='HOWM Schedule II',
+            prohibited_or_unsafe_actions='No drain disposal',
+            verification_required='Verify flash point',
+        )
+        def side_effect(**kwargs):
+            if kwargs['text_format'] is HazardClassification:
+                return types.SimpleNamespace(output_parsed=classification)
+            return types.SimpleNamespace(output_parsed=plan)
+        fake_client.responses.parse = side_effect
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            runs_path = Path(tmp_dir)
+            run_id = "test_remediation_run"
+            run_folder = runs_path / run_id
+            run_folder.mkdir(parents=True, exist_ok=True)
+
+            initial_meta = {
+                "run_id": run_id,
+                "filename": "test.xlsx",
+                "chemicals": ["Mystery Liquid", "Toluene"],
+                "status": "completed",
+                "bin_counts": {
+                    "Flammable Solvents": 1,
+                    "Inorganic Acids": 0,
+                    "Inorganic Bases": 0,
+                    "Carcinogenic & Toxic Organics": 0,
+                    "Biohazard & Infectious": 0,
+                    "Review Queue": 1,
+                },
+                "classifications": {
+                    "Mystery Liquid": {"classification": {}, "bin": "Review Queue"},
+                    "Toluene": {"classification": {"flammable": True}, "bin": "Flammable Solvents"}
+                },
+                "dossiers": {
+                    "Mystery Liquid": {
+                        "chemical": "Mystery Liquid",
+                        "flammable": False,
+                        "carcinogenic": False,
+                        "infectious": False,
+                        "toxic": False,
+                        "corrosive": False,
+                        "segregation_bin": "Review Queue",
+                        "identification": "",
+                        "segregation": "",
+                        "container": "",
+                        "labeling": "",
+                        "storage": "",
+                        "ppe": "",
+                        "spill": "",
+                        "treatment": "",
+                        "disposal": "",
+                        "usepa": "",
+                        "india": "",
+                        "prohibited": "",
+                        "verification": "",
+                        "review_required": True,
+                        "review_reason": "API timeout"
+                    },
+                    "Toluene": {
+                        "chemical": "Toluene",
+                        "flammable": True,
+                        "carcinogenic": False,
+                        "infectious": False,
+                        "toxic": False,
+                        "corrosive": False,
+                        "segregation_bin": "Flammable Solvents",
+                        "identification": "",
+                        "segregation": "",
+                        "container": "",
+                        "labeling": "",
+                        "storage": "",
+                        "ppe": "",
+                        "spill": "",
+                        "treatment": "",
+                        "disposal": "",
+                        "usepa": "",
+                        "india": "",
+                        "prohibited": "",
+                        "verification": "",
+                        "review_required": False,
+                        "review_reason": None
+                    }
+                },
+                "remediated_from": {}
+            }
+            with open(run_folder / "meta.json", "w", encoding="utf-8") as f:
+                json.dump(initial_meta, f, indent=2)
+
+            dossier, bin_counts = remediate_batch_item(
+                run_id=run_id,
+                original_name="Mystery Liquid",
+                new_name="Acetone",
+                runs_dir=runs_path,
+                client=fake_client
+            )
+
+            self.assertEqual(dossier.chemical, "Acetone")
+            self.assertFalse(dossier.review_required)
+            self.assertEqual(dossier.segregation_bin, "Flammable Solvents")
+            self.assertEqual(bin_counts["Review Queue"], 0)
+            self.assertEqual(bin_counts["Flammable Solvents"], 2)
+
+            with open(run_folder / "meta.json", "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            self.assertIn("Acetone", meta["chemicals"])
+            self.assertNotIn("Mystery Liquid", meta["chemicals"])
+            self.assertEqual(meta["remediated_from"]["Acetone"], "Mystery Liquid")
+
+    def test_remediate_batch_item_collision_guard(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            runs_path = Path(tmp_dir)
+            run_id = "collision_run"
+            run_folder = runs_path / run_id
+            run_folder.mkdir(parents=True, exist_ok=True)
+
+            meta = {
+                "run_id": run_id,
+                "chemicals": ["Mystery Liquid", "Acetone"],
+                "dossiers": {"Mystery Liquid": {}, "Acetone": {}},
+                "bin_counts": {}
+            }
+            with open(run_folder / "meta.json", "w", encoding="utf-8") as f:
+                json.dump(meta, f)
+
+            with self.assertRaises(ValueError) as ctx:
+                remediate_batch_item(
+                    run_id=run_id,
+                    original_name="Mystery Liquid",
+                    new_name="Acetone",
+                    runs_dir=runs_path
+                )
+            self.assertIn("already present in this batch", str(ctx.exception))
+
+    def test_remediate_batch_item_empty_name(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            runs_path = Path(tmp_dir)
+            run_id = "empty_run"
+            run_folder = runs_path / run_id
+            run_folder.mkdir(parents=True, exist_ok=True)
+
+            meta = {
+                "run_id": run_id,
+                "chemicals": ["Mystery Liquid"],
+                "dossiers": {"Mystery Liquid": {}},
+                "bin_counts": {}
+            }
+            with open(run_folder / "meta.json", "w", encoding="utf-8") as f:
+                json.dump(meta, f)
+
+            with self.assertRaises(ValueError) as ctx:
+                remediate_batch_item(
+                    run_id=run_id,
+                    original_name="Mystery Liquid",
+                    new_name="   ",
+                    runs_dir=runs_path
+                )
+            self.assertIn("Chemical name cannot be empty", str(ctx.exception))
+
+    def test_remediate_batch_item_run_not_found(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            runs_path = Path(tmp_dir)
+            with self.assertRaises(FileNotFoundError):
+                remediate_batch_item(
+                    run_id="non_existent_run",
+                    original_name="Mystery Liquid",
+                    new_name="Acetone",
+                    runs_dir=runs_path
+                )
+
+    def test_remediate_batch_item_chemical_not_found(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            runs_path = Path(tmp_dir)
+            run_id = "chem_not_found_run"
+            run_folder = runs_path / run_id
+            run_folder.mkdir(parents=True, exist_ok=True)
+
+            meta = {
+                "run_id": run_id,
+                "chemicals": ["Toluene"],
+                "dossiers": {"Toluene": {}},
+                "bin_counts": {}
+            }
+            with open(run_folder / "meta.json", "w", encoding="utf-8") as f:
+                json.dump(meta, f)
+
+            with self.assertRaises(ValueError) as ctx:
+                remediate_batch_item(
+                    run_id=run_id,
+                    original_name="Ghost Chemical",
+                    new_name="Acetone",
+                    runs_dir=runs_path
+                )
+            self.assertIn("Ghost Chemical", str(ctx.exception))
+
+    def test_remediate_batch_item_same_name_retry(self):
+        fake_client = FakeClient()
+        classification = HazardClassification(
+            flammable=True, carcinogenic=False, infectious=False, toxic=False, corrosive=False
+        )
+        plan = ManagementPlan(
+            chemical='Acetone',
+            identification_and_characterization='Ketone solvent',
+            segregation_and_incompatibilities='Keep away from oxidizers',
+            recommended_container='Safety can',
+            labeling_requirements='FLAMMABLE',
+            storage_requirements='Flammables cabinet',
+            handling_and_ppe='Nitrile gloves',
+            spill_and_emergency_management='Absorb with vermiculite',
+            treatment_framework='Thermal oxidation',
+            final_disposal_framework='Incineration at TSDF',
+            usepa_framework='D001',
+            indian_framework='HOWM Schedule II',
+            prohibited_or_unsafe_actions='No drain disposal',
+            verification_required='Verify flash point',
+        )
+        def side_effect(**kwargs):
+            if kwargs['text_format'] is HazardClassification:
+                return types.SimpleNamespace(output_parsed=classification)
+            return types.SimpleNamespace(output_parsed=plan)
+        fake_client.responses.parse = side_effect
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            runs_path = Path(tmp_dir)
+            run_id = "same_name_run"
+            run_folder = runs_path / run_id
+            run_folder.mkdir(parents=True, exist_ok=True)
+
+            meta = {
+                "run_id": run_id,
+                "chemicals": ["Acetone"],
+                "dossiers": {"Acetone": {"review_required": True, "bin": "Review Queue", "segregation_bin": "Review Queue"}},
+                "bin_counts": {"Review Queue": 1}
+            }
+            with open(run_folder / "meta.json", "w", encoding="utf-8") as f:
+                json.dump(meta, f)
+
+            dossier, bin_counts = remediate_batch_item(
+                run_id=run_id,
+                original_name="Acetone",
+                new_name="Acetone",
+                runs_dir=runs_path,
+                client=fake_client
+            )
+            self.assertEqual(dossier.chemical, "Acetone")
+            self.assertFalse(dossier.review_required)
+            self.assertEqual(bin_counts["Flammable Solvents"], 1)
+            self.assertEqual(bin_counts["Review Queue"], 0)
+
 
 
 if __name__ == '__main__':

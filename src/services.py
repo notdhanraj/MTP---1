@@ -10,6 +10,8 @@ from src.generate_management_plan import make_plan
 from src.models import (
     BatchQueuedResponse,
     BatchRunResponse,
+    RetryItemRequest,
+    RetryItemResponse,
     WasteManagementDossier,
     assign_segregation_bin,
 )
@@ -464,4 +466,109 @@ def stream_batch_events(
             "bin_counts": bin_counts,
             "items": [dossiers[c] for c in chemicals if c in dossiers],
         }
+
+
+def remediate_batch_item(
+    run_id: str,
+    original_name: str,
+    new_name: str,
+    runs_dir: Path | None = None,
+    client=None,
+) -> tuple[WasteManagementDossier, dict[str, int]]:
+    target_runs_dir = runs_dir if runs_dir is not None else DEFAULT_RUNS_DIR
+    run_dir = target_runs_dir / run_id
+    meta_path = run_dir / "meta.json"
+
+    if not meta_path.exists():
+        raise FileNotFoundError(f"Run '{run_id}' not found.")
+
+    clean_new_name = normalize_chemical_name(new_name)
+    if not clean_new_name:
+        raise ValueError("Chemical name cannot be empty.")
+
+    with open(meta_path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+
+    chemicals: list[str] = meta.get("chemicals", [])
+    orig_clean = normalize_chemical_name(original_name)
+
+    # Find original chemical index (case-insensitive)
+    found_idx = -1
+    matched_orig_name = None
+    for idx, c in enumerate(chemicals):
+        if c.strip().lower() == orig_clean.lower():
+            found_idx = idx
+            matched_orig_name = c
+            break
+
+    if found_idx == -1:
+        raise ValueError(f"Chemical '{original_name}' not found in run '{run_id}'.")
+
+    # Collision guard: check if new_name already exists in other entries
+    for idx, c in enumerate(chemicals):
+        if idx != found_idx and c.strip().lower() == clean_new_name.lower():
+            raise ValueError(
+                f"A chemical named '{clean_new_name}' is already present in this batch. Please specify a distinguishing formulation (e.g., '{clean_new_name} 50%' or '{clean_new_name}/Water Mix')."
+            )
+
+    # Re-evaluate chemical
+    dossier = lookup_chemical(clean_new_name, client=client)
+
+    # Update metadata
+    chemicals[found_idx] = clean_new_name
+    meta["chemicals"] = chemicals
+
+    dossiers = meta.get("dossiers", {})
+    if matched_orig_name in dossiers and matched_orig_name != clean_new_name:
+        del dossiers[matched_orig_name]
+    dossiers[clean_new_name] = dossier.model_dump()
+    meta["dossiers"] = dossiers
+
+    classifications = meta.get("classifications", {})
+    if matched_orig_name in classifications and matched_orig_name != clean_new_name:
+        del classifications[matched_orig_name]
+    classifications[clean_new_name] = {
+        "classification": {
+            "flammable": dossier.flammable,
+            "carcinogenic": dossier.carcinogenic,
+            "infectious": dossier.infectious,
+            "toxic": dossier.toxic,
+            "corrosive": dossier.corrosive,
+        },
+        "bin": dossier.segregation_bin,
+    }
+    meta["classifications"] = classifications
+
+    # Recalculate bin counts
+    recalculated_counts = {
+        "Flammable Solvents": 0,
+        "Inorganic Acids": 0,
+        "Inorganic Bases": 0,
+        "Carcinogenic & Toxic Organics": 0,
+        "Biohazard & Infectious": 0,
+        "Review Queue": 0,
+    }
+    for item in dossiers.values():
+        bin_name = item.get("segregation_bin") or item.get("bin")
+        if item.get("review_required") or bin_name == "Review Queue":
+            recalculated_counts["Review Queue"] = recalculated_counts.get("Review Queue", 0) + 1
+        elif bin_name in recalculated_counts:
+            recalculated_counts[bin_name] += 1
+        else:
+            recalculated_counts["Review Queue"] = recalculated_counts.get("Review Queue", 0) + 1
+
+    meta["bin_counts"] = recalculated_counts
+
+    remediated_from = meta.get("remediated_from", {})
+    remediated_from[clean_new_name] = original_name
+    meta["remediated_from"] = remediated_from
+
+    # Save meta.json atomically
+    temp_meta_path = meta_path.with_suffix(".tmp")
+    with open(temp_meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
+    temp_meta_path.replace(meta_path)
+
+    return dossier, recalculated_counts
+
 

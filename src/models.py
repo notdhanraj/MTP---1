@@ -1,10 +1,16 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class WasteManagementDossier(BaseModel):
     chemical: str
-    bin: str
+    bin: str = ""
+    segregation_bin: str = ""
     categories: list[str] = Field(default_factory=list)
+    flammable: bool = False
+    carcinogenic: bool = False
+    infectious: bool = False
+    toxic: bool = False
+    corrosive: bool = False
     container: str
     storage: str
     ppe: str
@@ -20,6 +26,24 @@ class WasteManagementDossier(BaseModel):
     disposal: str
     review_required: bool = False
     review_reason: str | None = None
+
+    @model_validator(mode="after")
+    def _sync_fields(self) -> "WasteManagementDossier":
+        if self.segregation_bin and not self.bin:
+            self.bin = self.segregation_bin
+        elif self.bin and not self.segregation_bin:
+            self.segregation_bin = self.bin
+
+        for cat in self.categories:
+            cat_l = cat.lower()
+            if hasattr(self, cat_l):
+                setattr(self, cat_l, True)
+
+        for flag in ["flammable", "carcinogenic", "infectious", "toxic", "corrosive"]:
+            if getattr(self, flag, False) and flag.capitalize() not in self.categories:
+                self.categories.append(flag.capitalize())
+
+        return self
 
     @property
     def recommended_container(self) -> str:
@@ -41,6 +65,19 @@ class BatchQueuedResponse(BaseModel):
     chemicals: list[str]
     pause_after_classification: bool = False
     status: str = "queued"
+
+
+class RetryItemRequest(BaseModel):
+    original_name: str
+    new_name: str
+
+
+class RetryItemResponse(BaseModel):
+    status: str = "success"
+    chemical: str
+    original_name: str
+    dossier: WasteManagementDossier
+    bin_counts: dict[str, int]
 
 
 def assign_segregation_bin(categories: list[str], chemical: str, review_required: bool = False) -> str:
