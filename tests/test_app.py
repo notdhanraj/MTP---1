@@ -138,6 +138,23 @@ class TestApp(unittest.TestCase):
         self.assertIn("resetFilters", html)
         self.assertIn("Reset Filters", html)
 
+    def test_template_contains_inline_editing_and_retry_controls(self):
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+
+        # Review card inline edit and retry bindings
+        self.assertIn("startEditing", html)
+        self.assertIn("cancelEditing", html)
+        self.assertIn("retryChemical", html)
+        self.assertIn("editingChemical", html)
+        self.assertIn("editNameInput", html)
+        self.assertIn("retryingChemical", html)
+        self.assertIn("retryError", html)
+        self.assertIn("Save &amp; Retry", html)
+        self.assertIn("Retry Chemical", html)
+        self.assertIn("Reason:", html)
+
 
     def test_lookup_endpoint_success(self):
         import src.services as services

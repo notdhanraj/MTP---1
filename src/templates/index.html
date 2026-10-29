@@ -132,6 +132,18 @@
           </div>
         </div>
 
+        <!-- Remediation / Retry Error Banner -->
+        <template x-if="retryError">
+          <div class="p-3.5 bg-red-950/60 border border-red-800 rounded-xl text-red-200 text-xs flex items-start gap-2.5 shadow-md">
+            <span class="text-base leading-none">⚠️</span>
+            <div class="flex-1">
+              <div class="font-bold text-red-300">Remediation / Retry Error</div>
+              <div class="text-[11px] text-red-200/90 mt-0.5" x-text="retryError"></div>
+            </div>
+            <button @click="retryError = null" class="text-red-400 hover:text-red-200 text-sm leading-none">✕</button>
+          </div>
+        </template>
+
         <!-- Multi-Stage Progress Stepper Banner -->
         <div x-show="streamActive || streamPaused || streamStage === 'completed'"
              class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
@@ -328,15 +340,98 @@
                 <div :class="item.review_required ? 'border-amber-500/50 bg-amber-950/15 ring-1 ring-amber-500/30' : 'border-slate-800 bg-slate-900/90'"
                      class="rounded-xl border p-5 shadow-lg flex flex-col justify-between transition hover:border-slate-700 space-y-4">
                   <div class="space-y-3">
-                    <!-- Card Header -->
-                    <div class="flex items-start justify-between gap-2">
-                      <h3 class="text-base font-bold text-white tracking-tight" x-text="item.chemical"></h3>
-                      <template x-if="item.review_required">
-                        <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 whitespace-nowrap">
-                          Review Required
-                        </span>
-                      </template>
+                    <!-- Card Header & Inline Editing -->
+                    <div>
+                      <div class="flex items-start justify-between gap-2">
+                        <!-- Non-editing State -->
+                        <template x-if="editingChemical !== item.chemical">
+                          <div class="flex items-center gap-2 flex-1 min-w-0">
+                            <h3 class="text-base font-bold text-white tracking-tight truncate" x-text="item.chemical"></h3>
+                            <template x-if="item.review_required">
+                              <button type="button"
+                                      @click="startEditing(item)"
+                                      title="Edit chemical name"
+                                      class="text-xs p-1 text-slate-400 hover:text-amber-300 transition rounded hover:bg-slate-800 shrink-0">
+                                ✏️
+                              </button>
+                            </template>
+                          </div>
+                        </template>
+
+                        <!-- Inline Editing State -->
+                        <template x-if="editingChemical === item.chemical">
+                          <div class="flex-1 space-y-2">
+                            <input type="text"
+                                   x-model="editNameInput"
+                                   @keydown.enter="retryChemical(item.chemical, editNameInput)"
+                                   @keydown.escape="cancelEditing()"
+                                   placeholder="Correct chemical name..."
+                                   class="w-full bg-slate-950 border border-amber-500/80 rounded px-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500">
+                            <div class="flex items-center gap-2">
+                              <button type="button"
+                                      @click="retryChemical(item.chemical, editNameInput)"
+                                      :disabled="retryingChemical === item.chemical"
+                                      class="px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-500 text-slate-950 text-xs font-semibold shadow-sm transition flex items-center gap-1 disabled:opacity-50">
+                                <template x-if="retryingChemical === item.chemical">
+                                  <span class="inline-block w-3 h-3 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></span>
+                                </template>
+                                <span>Save &amp; Retry</span>
+                              </button>
+                              <button type="button"
+                                      @click="cancelEditing()"
+                                      :disabled="retryingChemical === item.chemical"
+                                      class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition disabled:opacity-50">
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        </template>
+
+                        <!-- Review Required Badge -->
+                        <template x-if="item.review_required">
+                          <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 whitespace-nowrap shrink-0">
+                            Review Required
+                          </span>
+                        </template>
+                      </div>
                     </div>
+
+                    <!-- Amber Failure Explanation Box & Remediation Controls (Review Required) -->
+                    <template x-if="item.review_required">
+                      <div class="p-3 rounded-lg bg-amber-950/40 border border-amber-500/40 text-xs text-amber-200 space-y-2">
+                        <div class="text-[11px] leading-relaxed">
+                          <span class="font-semibold text-amber-300">Reason:</span>
+                          <span x-text="item.review_reason || 'Classification or segregation review required.'"></span>
+                        </div>
+                        <div class="flex items-center justify-between gap-2 pt-1 border-t border-amber-500/20">
+                          <template x-if="retryingChemical === item.chemical">
+                            <div class="flex items-center gap-2 text-[11px] text-amber-300 font-mono">
+                              <div class="w-3.5 h-3.5 rounded-full border-2 border-amber-400 border-t-transparent animate-spin"></div>
+                              <span>Retrying chemical...</span>
+                            </div>
+                          </template>
+                          <template x-if="retryingChemical !== item.chemical && editingChemical !== item.chemical">
+                            <div class="flex items-center gap-2 w-full justify-between">
+                              <button type="button"
+                                      @click="startEditing(item)"
+                                      class="text-[11px] text-amber-300 hover:text-amber-100 flex items-center gap-1 font-medium transition">
+                                <span>✏️</span>
+                                <span>Edit Name</span>
+                              </button>
+                              <button type="button"
+                                      @click="retryChemical(item.chemical)"
+                                      class="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 hover:text-white border border-amber-500/40 text-[11px] font-medium transition flex items-center gap-1">
+                                <span>🔄</span>
+                                <span>Retry</span>
+                              </button>
+                            </div>
+                          </template>
+                        </div>
+                        <template x-if="retryError && (editingChemical === item.chemical || retryingChemical === item.chemical)">
+                          <div class="text-[10px] text-red-300 bg-red-950/60 p-1.5 rounded border border-red-800" x-text="retryError"></div>
+                        </template>
+                      </div>
+                    </template>
 
                     <!-- Segregation Bin Badge -->
                     <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-800 text-slate-200 border border-slate-700">
@@ -449,15 +544,98 @@
                         <div :class="item.review_required ? 'border-amber-500/50 bg-amber-950/15 ring-1 ring-amber-500/30' : 'border-slate-800 bg-slate-900/90'"
                              class="rounded-xl border p-5 shadow-lg flex flex-col justify-between transition hover:border-slate-700 space-y-4">
                           <div class="space-y-3">
-                            <!-- Card Header -->
-                            <div class="flex items-start justify-between gap-2">
-                              <h3 class="text-base font-bold text-white tracking-tight" x-text="item.chemical"></h3>
-                              <template x-if="item.review_required">
-                                <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 whitespace-nowrap">
-                                  Review Required
-                                </span>
-                              </template>
+                            <!-- Card Header & Inline Editing -->
+                            <div>
+                              <div class="flex items-start justify-between gap-2">
+                                <!-- Non-editing State -->
+                                <template x-if="editingChemical !== item.chemical">
+                                  <div class="flex items-center gap-2 flex-1 min-w-0">
+                                    <h3 class="text-base font-bold text-white tracking-tight truncate" x-text="item.chemical"></h3>
+                                    <template x-if="item.review_required">
+                                      <button type="button"
+                                              @click="startEditing(item)"
+                                              title="Edit chemical name"
+                                              class="text-xs p-1 text-slate-400 hover:text-amber-300 transition rounded hover:bg-slate-800 shrink-0">
+                                        ✏️
+                                      </button>
+                                    </template>
+                                  </div>
+                                </template>
+
+                                <!-- Inline Editing State -->
+                                <template x-if="editingChemical === item.chemical">
+                                  <div class="flex-1 space-y-2">
+                                    <input type="text"
+                                           x-model="editNameInput"
+                                           @keydown.enter="retryChemical(item.chemical, editNameInput)"
+                                           @keydown.escape="cancelEditing()"
+                                           placeholder="Correct chemical name..."
+                                           class="w-full bg-slate-950 border border-amber-500/80 rounded px-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500">
+                                    <div class="flex items-center gap-2">
+                                      <button type="button"
+                                              @click="retryChemical(item.chemical, editNameInput)"
+                                              :disabled="retryingChemical === item.chemical"
+                                              class="px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-500 text-slate-950 text-xs font-semibold shadow-sm transition flex items-center gap-1 disabled:opacity-50">
+                                        <template x-if="retryingChemical === item.chemical">
+                                          <span class="inline-block w-3 h-3 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></span>
+                                        </template>
+                                        <span>Save &amp; Retry</span>
+                                      </button>
+                                      <button type="button"
+                                              @click="cancelEditing()"
+                                              :disabled="retryingChemical === item.chemical"
+                                              class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition disabled:opacity-50">
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  </div>
+                                </template>
+
+                                <!-- Review Required Badge -->
+                                <template x-if="item.review_required">
+                                  <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 whitespace-nowrap shrink-0">
+                                    Review Required
+                                  </span>
+                                </template>
+                              </div>
                             </div>
+
+                            <!-- Amber Failure Explanation Box & Remediation Controls (Review Required) -->
+                            <template x-if="item.review_required">
+                              <div class="p-3 rounded-lg bg-amber-950/40 border border-amber-500/40 text-xs text-amber-200 space-y-2">
+                                <div class="text-[11px] leading-relaxed">
+                                  <span class="font-semibold text-amber-300">Reason:</span>
+                                  <span x-text="item.review_reason || 'Classification or segregation review required.'"></span>
+                                </div>
+                                <div class="flex items-center justify-between gap-2 pt-1 border-t border-amber-500/20">
+                                  <template x-if="retryingChemical === item.chemical">
+                                    <div class="flex items-center gap-2 text-[11px] text-amber-300 font-mono">
+                                      <div class="w-3.5 h-3.5 rounded-full border-2 border-amber-400 border-t-transparent animate-spin"></div>
+                                      <span>Retrying chemical...</span>
+                                    </div>
+                                  </template>
+                                  <template x-if="retryingChemical !== item.chemical && editingChemical !== item.chemical">
+                                    <div class="flex items-center gap-2 w-full justify-between">
+                                      <button type="button"
+                                              @click="startEditing(item)"
+                                              class="text-[11px] text-amber-300 hover:text-amber-100 flex items-center gap-1 font-medium transition">
+                                        <span>✏️</span>
+                                        <span>Edit Name</span>
+                                      </button>
+                                      <button type="button"
+                                              @click="retryChemical(item.chemical)"
+                                              class="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 hover:text-white border border-amber-500/40 text-[11px] font-medium transition flex items-center gap-1">
+                                        <span>🔄</span>
+                                        <span>Retry</span>
+                                      </button>
+                                    </div>
+                                  </template>
+                                </div>
+                                <template x-if="retryError && (editingChemical === item.chemical || retryingChemical === item.chemical)">
+                                  <div class="text-[10px] text-red-300 bg-red-950/60 p-1.5 rounded border border-red-800" x-text="retryError"></div>
+                                </template>
+                              </div>
+                            </template>
 
                             <!-- Segregation Bin Badge -->
                             <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-800 text-slate-200 border border-slate-700">
@@ -681,12 +859,39 @@
 
     <div class="fixed inset-y-0 right-0 max-w-2xl w-full bg-slate-900 border-l border-slate-800 shadow-2xl flex flex-col">
       <!-- Drawer Header -->
-      <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
-        <div>
-          <div class="text-xs font-mono text-emerald-400 uppercase tracking-wider">Institutional Waste Plan Dossier</div>
-          <h2 class="text-lg font-bold text-white mt-0.5" x-text="activeDossier?.chemical"></h2>
+      <div class="px-6 py-4 border-b border-slate-800 bg-slate-950/60 space-y-3">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="text-xs font-mono text-emerald-400 uppercase tracking-wider">Institutional Waste Plan Dossier</div>
+            <h2 class="text-lg font-bold text-white mt-0.5" x-text="activeDossier?.chemical"></h2>
+          </div>
+          <button @click="drawerOpen = false" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 text-lg">✕</button>
         </div>
-        <button @click="drawerOpen = false" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 text-lg">✕</button>
+
+        <!-- Slide-Over Drawer Header Remediation Alert Box if review_required -->
+        <template x-if="activeDossier && activeDossier.review_required">
+          <div class="p-3 bg-amber-950/60 border border-amber-500/50 rounded-xl text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+            <div class="space-y-0.5 text-xs">
+              <div class="font-bold text-amber-300 flex items-center gap-1.5">
+                <span>⚠️</span>
+                <span>Review Required</span>
+              </div>
+              <div class="text-[11px] text-amber-200/90 leading-relaxed">
+                <span class="font-semibold text-amber-300">Reason:</span>
+                <span x-text="activeDossier.review_reason || 'Manual EHS review required before physical segregation.'"></span>
+              </div>
+            </div>
+            <button type="button"
+                    @click="retryChemical(activeDossier.chemical)"
+                    :disabled="retryingChemical === activeDossier.chemical"
+                    class="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold shadow-sm transition flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50">
+              <template x-if="retryingChemical === activeDossier.chemical">
+                <span class="inline-block w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></span>
+              </template>
+              <span>🔄 Retry Chemical</span>
+            </button>
+          </div>
+        </template>
       </div>
 
       <!-- Drawer Tabs -->
@@ -885,6 +1090,10 @@
         batchSearchQuery: '',
         activeHazardFilters: [],
         activeViewMode: 'grid',
+        editingChemical: null,
+        editNameInput: '',
+        retryingChemical: null,
+        retryError: null,
         expandedZones: {
           flammable: true,
           acids: true,
@@ -892,6 +1101,71 @@
           toxic: true,
           biohazard: true,
           review: true
+        },
+
+        startEditing(item) {
+          this.editingChemical = item.chemical;
+          this.editNameInput = item.chemical;
+          this.retryError = null;
+        },
+
+        cancelEditing() {
+          this.editingChemical = null;
+          this.editNameInput = '';
+          this.retryError = null;
+        },
+
+        async retryChemical(originalName, customNewName = null) {
+          const newName = (customNewName !== null ? customNewName : originalName).trim();
+          if (!newName) {
+            this.retryError = 'Chemical name cannot be empty.';
+            return;
+          }
+          if (!this.activeBatch || !this.activeBatch.run_id) {
+            this.retryError = 'No active batch run.';
+            return;
+          }
+
+          this.retryingChemical = originalName;
+          this.retryError = null;
+
+          try {
+            const resp = await fetch('/api/runs/' + this.activeBatch.run_id + '/retry', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ original_name: originalName, new_name: newName })
+            });
+
+            const data = await resp.json();
+            if (!resp.ok) {
+              throw new Error(data.detail || `Retry failed with status ${resp.status}`);
+            }
+
+            // On success:
+            if (this.activeBatch && this.activeBatch.items) {
+              const existingIdx = this.activeBatch.items.findIndex(
+                i => (i.chemical || '').toLowerCase() === originalName.toLowerCase()
+              );
+              if (existingIdx >= 0) {
+                this.activeBatch.items.splice(existingIdx, 1, data.dossier);
+              }
+            }
+
+            if (data.bin_counts && this.activeBatch) {
+              this.activeBatch.bin_counts = data.bin_counts;
+            }
+
+            if (this.activeDossier && this.activeDossier.chemical && this.activeDossier.chemical.toLowerCase() === originalName.toLowerCase()) {
+              this.activeDossier = data.dossier;
+            }
+
+            this.editingChemical = null;
+            this.editNameInput = '';
+          } catch (err) {
+            this.retryError = err.message || 'An error occurred during chemical retry.';
+          } finally {
+            this.retryingChemical = null;
+          }
         },
 
         toggleZone(zoneId) {
