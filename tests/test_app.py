@@ -165,6 +165,29 @@ class TestApp(unittest.TestCase):
         self.assertIn("Retry Chemical", html)
         self.assertIn("Reason:", html)
 
+    def test_template_contains_run_history_archive_and_export_buttons(self):
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+
+        # Header Run History button
+        self.assertIn("Run History", html)
+        self.assertIn("openRunHistory", html)
+
+        # Run History left drawer
+        self.assertIn("historyDrawerOpen", html)
+        self.assertIn("Run History Archive", html)
+        self.assertIn("loadRun", html)
+
+        # Batch summary export buttons
+        self.assertIn("Export Excel (.xlsx)", html)
+        self.assertIn("exportFilteredCsv", html)
+        self.assertIn("Export Filtered CSV", html)
+
+        # Alpine JS methods
+        self.assertIn("fetchRunHistory", html)
+        self.assertIn("exportFilteredCsv()", html)
+
 
     def test_lookup_endpoint_success(self):
         import src.services as services

@@ -56,6 +56,12 @@
           <span class="absolute left-2.5 top-2 text-slate-500 text-xs">🔍</span>
           <span class="absolute right-2 top-1.5 text-[10px] font-mono text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded">Enter ↵</span>
         </div>
+        <button @click="openRunHistory()"
+                class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-xs font-medium transition border border-slate-700 flex items-center gap-1.5 shadow-sm">
+          <span>🕒</span>
+          <span>Run History</span>
+          <span class="px-1.5 py-0.2 rounded-full font-mono text-[10px] bg-slate-700 text-emerald-400 font-bold" x-text="runHistory.length"></span>
+        </button>
         <button @click="uploadModalOpen = true"
                 class="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-medium transition shadow-sm whitespace-nowrap">
           <span>📁</span>
@@ -89,9 +95,24 @@
                 </span>
               </div>
             </div>
-            <div class="flex items-center gap-3">
+            <div class="flex flex-wrap items-center gap-2.5">
+              <!-- Export Excel (.xlsx) -->
+              <a :href="'/api/runs/' + activeBatch.run_id + '/export'"
+                 download
+                 class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold transition flex items-center gap-1.5 shadow-md shadow-emerald-950/40">
+                <span>📊</span>
+                <span>Export Excel (.xlsx)</span>
+              </a>
+
+              <!-- Export Filtered CSV -->
+              <button @click="exportFilteredCsv()"
+                      class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-medium transition border border-slate-700 flex items-center gap-1.5">
+                <span>📄</span>
+                <span>Export Filtered CSV</span>
+              </button>
+
               <button @click="uploadModalOpen = true"
-                      class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-medium transition border border-slate-700 flex items-center gap-1.5">
+                      class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-medium transition border border-slate-700 flex items-center gap-1.5">
                 <span>📁</span>
                 <span>Upload New Batch</span>
               </button>
@@ -1065,6 +1086,116 @@
     </div>
   </div>
 
+  <!-- Left Slide-over Run History Archive Drawer -->
+  <div x-show="historyDrawerOpen"
+       class="fixed inset-0 z-50 overflow-hidden"
+       x-cloak>
+    <!-- Dark Backdrop -->
+    <div x-show="historyDrawerOpen"
+         x-transition:enter="ease-out duration-300"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="ease-in duration-200"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         @click="historyDrawerOpen = false"
+         class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm transition-opacity"></div>
+
+    <div class="fixed inset-y-0 left-0 max-w-full flex">
+      <div x-show="historyDrawerOpen"
+           x-transition:enter="transform transition ease-in-out duration-300"
+           x-transition:enter-start="-translate-x-full"
+           x-transition:enter-end="translate-x-0"
+           x-transition:leave="transform transition ease-in-out duration-300"
+           x-transition:leave-start="translate-x-0"
+           x-transition:leave-end="-translate-x-full"
+           class="w-screen max-w-md bg-slate-900 border-r border-slate-800 shadow-2xl flex flex-col">
+
+        <!-- Drawer Header -->
+        <div class="p-6 border-b border-slate-800 flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <span class="text-xl">🕒</span>
+            <div>
+              <h2 class="text-lg font-bold text-white tracking-tight">Run History Archive</h2>
+              <p class="text-xs text-slate-400">Past laboratory inventory evaluations</p>
+            </div>
+          </div>
+          <button @click="historyDrawerOpen = false"
+                  class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition">
+            ✕
+          </button>
+        </div>
+
+        <!-- Drawer Body -->
+        <div class="flex-1 overflow-y-auto p-6 space-y-4">
+          <!-- Empty State -->
+          <template x-if="runHistory.length === 0">
+            <div class="text-center py-12 px-4 rounded-xl border border-dashed border-slate-800 bg-slate-950/40 space-y-3">
+              <span class="text-3xl">📂</span>
+              <h3 class="text-sm font-semibold text-slate-200">No Past Batch Runs Found</h3>
+              <p class="text-xs text-slate-400 max-w-xs mx-auto">
+                Upload a chemical inventory workbook to generate and archive your first compliant waste evaluation.
+              </p>
+              <button @click="historyDrawerOpen = false; uploadModalOpen = true"
+                      class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold transition inline-flex items-center gap-1.5 shadow-md shadow-emerald-950/40">
+                <span>📁</span>
+                <span>Upload Batch (.xlsx)</span>
+              </button>
+            </div>
+          </template>
+
+          <!-- Run Cards -->
+          <template x-for="run in runHistory" :key="run.run_id">
+            <div :class="activeBatch && activeBatch.run_id === run.run_id ? 'border-emerald-500/50 bg-emerald-950/10 ring-1 ring-emerald-500/30' : 'border-slate-800 bg-slate-950/60'"
+                 class="rounded-xl border p-4 space-y-3 hover:border-slate-700 transition">
+              <div class="flex items-start justify-between gap-2">
+                <div>
+                  <div class="flex items-center gap-2">
+                    <span class="font-semibold text-sm text-white flex items-center gap-1.5">
+                      <span>📑</span>
+                      <span x-text="run.filename"></span>
+                    </span>
+                    <template x-if="activeBatch && activeBatch.run_id === run.run_id">
+                      <span class="text-[10px] font-mono font-bold uppercase px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">Active</span>
+                    </template>
+                  </div>
+                  <div class="text-[11px] font-mono text-slate-400 mt-0.5" x-text="formatDate(run.timestamp)"></div>
+                </div>
+                <span class="text-xs font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 whitespace-nowrap">
+                  <span x-text="run.total_count"></span> chemicals
+                </span>
+              </div>
+
+              <!-- Mini Bin Pills -->
+              <div class="flex flex-wrap gap-1.5 text-[10px] font-mono">
+                <template x-for="(count, bin) in run.bin_counts" :key="bin">
+                  <span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300">
+                    <span x-text="bin"></span>: <span class="font-bold text-white" x-text="count"></span>
+                  </span>
+                </template>
+              </div>
+
+              <!-- Actions -->
+              <div class="flex items-center justify-between gap-2 pt-2 border-t border-slate-800/80">
+                <button @click="loadRun(run.run_id)"
+                        class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-medium transition border border-slate-700 flex items-center gap-1">
+                  <span>👁️</span>
+                  <span>Load Batch</span>
+                </button>
+                <a :href="'/api/runs/' + run.run_id + '/export'"
+                   download
+                   class="px-2.5 py-1.5 bg-slate-800/80 hover:bg-emerald-950/60 text-slate-300 hover:text-emerald-300 rounded-lg text-xs font-mono transition border border-slate-700/80 hover:border-emerald-700/60 flex items-center gap-1">
+                  <span>📥</span>
+                  <span>.xlsx</span>
+                </a>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     function hazWasteApp() {
       return {
@@ -1072,6 +1203,8 @@
         isLoading: false,
         activeDossier: null,
         drawerOpen: false,
+        historyDrawerOpen: false,
+        runHistory: [],
         activeTab: 'safety',
         uploadModalOpen: false,
         get showUploadModal() { return this.uploadModalOpen; },
@@ -1101,6 +1234,110 @@
           toxic: true,
           biohazard: true,
           review: true
+        },
+
+        init() {
+          this.fetchRunHistory();
+        },
+
+        async fetchRunHistory() {
+          try {
+            const resp = await fetch('/api/runs');
+            if (resp.ok) {
+              this.runHistory = await resp.json();
+            }
+          } catch (e) {
+            console.error('Failed to fetch run history:', e);
+          }
+        },
+
+        openRunHistory() {
+          this.fetchRunHistory();
+          this.historyDrawerOpen = true;
+        },
+
+        async loadRun(runId) {
+          try {
+            const resp = await fetch(`/api/runs/${runId}`);
+            if (!resp.ok) throw new Error(`Failed to load run ${runId}`);
+            const data = await resp.json();
+            this.activeBatch = data;
+            this.batchSearchQuery = '';
+            this.activeHazardFilters = [];
+            this.historyDrawerOpen = false;
+          } catch (e) {
+            alert(e.message);
+          }
+        },
+
+        formatDate(isoStr) {
+          if (!isoStr) return '';
+          try {
+            const d = new Date(isoStr);
+            return isNaN(d.getTime()) ? isoStr : d.toLocaleString();
+          } catch {
+            return isoStr;
+          }
+        },
+
+        exportFilteredCsv() {
+          if (!this.filteredItems || this.filteredItems.length === 0) {
+            alert('No items match current filters to export.');
+            return;
+          }
+          const headers = [
+            'Chemical',
+            'Physical Segregation Bin',
+            'Hazard Categories',
+            'Recommended Container',
+            'Storage Requirements',
+            'Handling & PPE',
+            'Segregation & Incompatibilities',
+            'Labeling Requirements',
+            'USEPA RCRA Framework',
+            'Indian HOWM Framework',
+            'Treatment Framework',
+            'Final Disposal Framework',
+            'Review Required'
+          ];
+
+          const escapeCsv = (str) => {
+            if (str === null || str === undefined) return '""';
+            const s = String(str).replace(/"/g, '""');
+            return `"${s}"`;
+          };
+
+          const rows = this.filteredItems.map(item => [
+            escapeCsv(item.chemical),
+            escapeCsv(item.segregation_bin || item.bin),
+            escapeCsv((item.categories || []).join('; ')),
+            escapeCsv(item.recommended_container || item.container),
+            escapeCsv(item.storage),
+            escapeCsv(item.ppe),
+            escapeCsv(item.segregation),
+            escapeCsv(item.labeling),
+            escapeCsv(item.usepa),
+            escapeCsv(item.india),
+            escapeCsv(item.treatment),
+            escapeCsv(item.disposal),
+            escapeCsv(item.review_required ? 'YES' : 'NO')
+          ].join(','));
+
+          const csvContent = [headers.map(escapeCsv).join(','), ...rows].join('\r\n');
+          const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          const filename = `${this.activeBatch?.run_id || 'batch'}_filtered.csv`;
+          link.setAttribute('href', url);
+          link.setAttribute('download', filename);
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        },
+
+        handleStreamComplete() {
+          this.fetchRunHistory();
         },
 
         startEditing(item) {
@@ -1425,6 +1662,7 @@
             } else {
               this.activeBatch = data;
               this.uploadModalOpen = false;
+              this.fetchRunHistory();
             }
           } catch (err) {
             this.uploadError = err.message || 'An error occurred during file upload.';
@@ -1533,6 +1771,7 @@
                   this.eventSource.close();
                   this.eventSource = null;
                 }
+                this.handleStreamComplete();
               } else if (msg.type === 'stream_error') {
                 this.streamActive = false;
                 this.streamMessage = 'Stream error: ' + (msg.error || 'Unknown error');
