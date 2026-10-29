@@ -1,6 +1,7 @@
 import io
 import json
 from pathlib import Path
+import shutil
 import types
 import unittest
 from fastapi.testclient import TestClient
@@ -530,6 +531,143 @@ class TestAppUploadEndpoint(unittest.TestCase):
         self.assertEqual(meta_after["bin_counts"]["Review Queue"], initial_review_count - 1)
         self.assertEqual(meta_after["bin_counts"]["Inorganic Acids"], 1)
         self.assertEqual(meta_after["remediated_from"]["Hydrochloric Acid"], "Mystery Chemical Mix")
+
+    def test_list_runs_endpoint(self):
+        # Create a mock run directory
+        from src.services import DEFAULT_RUNS_DIR
+        mock_id = "test_run_list_endpoint"
+        mock_dir = DEFAULT_RUNS_DIR / mock_id
+        mock_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(mock_dir / "meta.json", "w", encoding="utf-8") as f:
+                json.dump({
+                    "run_id": mock_id,
+                    "filename": "test.xlsx",
+                    "timestamp": "2026-10-29T12:00:00",
+                    "total_count": 2,
+                    "bin_counts": {"Flammable Solvents": 2},
+                    "status": "completed",
+                }, f)
+
+            response = self.client.get("/api/runs")
+            self.assertEqual(response.status_code, 200)
+            runs = response.json()
+            self.assertIsInstance(runs, list)
+            match = next((r for r in runs if r["run_id"] == mock_id), None)
+            self.assertIsNotNone(match)
+            self.assertEqual(match["filename"], "test.xlsx")
+            self.assertEqual(match["total_count"], 2)
+        finally:
+            shutil.rmtree(mock_dir, ignore_errors=True)
+
+    def test_get_run_endpoint_success_and_not_found(self):
+        from src.services import DEFAULT_RUNS_DIR
+        mock_id = "test_run_get_details"
+        mock_dir = DEFAULT_RUNS_DIR / mock_id
+        mock_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(mock_dir / "meta.json", "w", encoding="utf-8") as f:
+                json.dump({
+                    "run_id": mock_id,
+                    "filename": "lab.xlsx",
+                    "timestamp": "2026-10-29T12:00:00",
+                    "total_count": 1,
+                    "bin_counts": {"Flammable Solvents": 1},
+                    "status": "completed",
+                    "chemicals": ["Ethanol"],
+                    "dossiers": {
+                        "Ethanol": {
+                            "chemical": "Ethanol",
+                            "bin": "Flammable Solvents",
+                            "categories": ["Flammable"],
+                            "container": "Glass",
+                            "storage": "Cabinet",
+                            "ppe": "Gloves",
+                            "segregation": "Oxidizers",
+                            "labeling": "Flammable",
+                            "spill": "Absorb",
+                            "identification": "Alcohol",
+                            "prohibited": "Drain",
+                            "verification": "None",
+                            "usepa": "D001",
+                            "india": "Sched II",
+                            "treatment": "Thermal",
+                            "disposal": "TSDF",
+                        }
+                    }
+                }, f)
+
+            response = self.client.get(f"/api/runs/{mock_id}")
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
+            self.assertEqual(data["run_id"], mock_id)
+            self.assertEqual(len(data["items"]), 1)
+            self.assertEqual(data["items"][0]["chemical"], "Ethanol")
+
+            # 404 for unknown run
+            resp_404 = self.client.get("/api/runs/non_existent_run_12345")
+            self.assertEqual(resp_404.status_code, 404)
+        finally:
+            shutil.rmtree(mock_dir, ignore_errors=True)
+
+    def test_export_run_excel_endpoint_success_and_in_progress_guard(self):
+        from src.services import DEFAULT_RUNS_DIR
+        mock_id = "test_run_export_excel"
+        mock_dir = DEFAULT_RUNS_DIR / mock_id
+        mock_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(mock_dir / "meta.json", "w", encoding="utf-8") as f:
+                json.dump({
+                    "run_id": mock_id,
+                    "filename": "sample.xlsx",
+                    "timestamp": "2026-10-29T12:00:00",
+                    "total_count": 1,
+                    "bin_counts": {"Flammable Solvents": 1},
+                    "status": "completed",
+                    "chemicals": ["Ethanol"],
+                    "dossiers": {
+                        "Ethanol": {
+                            "chemical": "Ethanol",
+                            "bin": "Flammable Solvents",
+                            "categories": ["Flammable"],
+                            "container": "Glass",
+                            "storage": "Cabinet",
+                            "ppe": "Gloves",
+                            "segregation": "Oxidizers",
+                            "labeling": "Flammable",
+                            "spill": "Absorb",
+                            "identification": "Alcohol",
+                            "prohibited": "Drain",
+                            "verification": "None",
+                            "usepa": "D001",
+                            "india": "Sched II",
+                            "treatment": "Thermal",
+                            "disposal": "TSDF",
+                        }
+                    }
+                }, f)
+
+            response = self.client.get(f"/api/runs/{mock_id}/export")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                response.headers.get("content-type"),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+            self.assertIn("hazardous_waste_management_plan_test_run_export_excel.xlsx", response.headers.get("content-disposition", ""))
+            self.assertGreater(len(response.content), 1000)
+
+            # 409 guard for in-progress run
+            with open(mock_dir / "meta.json", "w", encoding="utf-8") as f:
+                json.dump({"run_id": mock_id, "status": "planning"}, f)
+
+            resp_in_progress = self.client.get(f"/api/runs/{mock_id}/export")
+            self.assertEqual(resp_in_progress.status_code, 409)
+
+            # 404 guard for non-existent run
+            resp_404 = self.client.get("/api/runs/non_existent_run_export_99999/export")
+            self.assertEqual(resp_404.status_code, 404)
+        finally:
+            shutil.rmtree(mock_dir, ignore_errors=True)
 
 
 def __getattr__(name: str):

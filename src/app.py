@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from src.models import (
@@ -9,6 +9,7 @@ from src.models import (
     BatchRunResponse,
     RetryItemRequest,
     RetryItemResponse,
+    RunSummaryResponse,
     WasteManagementDossier,
 )
 import src.services as services
@@ -160,6 +161,34 @@ async def api_retry_chemical_item(run_id: str, payload: RetryItemRequest):
             status_code=500,
             detail=f"Internal server error retrying chemical '{new_name}': {str(e)}"
         )
+
+
+@app.get("/api/runs", response_model=list[RunSummaryResponse])
+async def get_runs_history():
+    return services.list_runs()
+
+
+@app.get("/api/runs/{run_id}", response_model=BatchRunResponse)
+async def get_run(run_id: str):
+    try:
+        return services.get_run_details(run_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found.")
+
+
+@app.get("/api/runs/{run_id}/export")
+async def export_run_excel(run_id: str):
+    try:
+        excel_path = services.generate_batch_excel(run_id)
+        return FileResponse(
+            path=excel_path,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            filename=f"hazardous_waste_management_plan_{run_id}.xlsx",
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found.")
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
 
 
