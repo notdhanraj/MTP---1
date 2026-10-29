@@ -692,6 +692,117 @@ class TestAppUploadEndpoint(unittest.TestCase):
         finally:
             shutil.rmtree(mock_dir, ignore_errors=True)
 
+    def test_e2e_archive_indexing_and_excel_export_parity(self):
+        import openpyxl
+        from unittest.mock import patch
+        from src.classify_waste import HazardClassification
+        from src.generate_management_plan import ManagementPlan
+        from src.services import DEFAULT_RUNS_DIR
+
+        # 1. Create a sample batch workbook with 2 chemicals
+        buf = io.BytesIO()
+        df = pd.DataFrame({"Chemical": ["Toluene", "Nitric Acid"]})
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False)
+        buf.seek(0)
+
+        # 2. Upload batch and process
+        with patch("src.services.classify_chemical") as mock_clf, \
+             patch("src.services.make_plan") as mock_plan:
+
+            mock_clf.side_effect = lambda chem, client=None: (
+                HazardClassification(flammable=True, carcinogenic=False, infectious=False, toxic=True, corrosive=False)
+                if chem == "Toluene" else
+                HazardClassification(flammable=False, carcinogenic=False, infectious=False, toxic=False, corrosive=True)
+            )
+
+            mock_plan.side_effect = lambda chem, cats, client=None: (
+                ManagementPlan(
+                    chemical="Toluene",
+                    recommended_container="Safety can",
+                    storage_requirements="Flammable cabinet",
+                    handling_and_ppe="Nitrile gloves",
+                    segregation_and_incompatibilities="Avoid oxidizers",
+                    labeling_requirements="Flammable Liquid",
+                    spill_and_emergency_management="Absorb with pads",
+                    identification_and_characterization="Aromatic hydrocarbon",
+                    prohibited_or_unsafe_actions="Do not pour in sink",
+                    verification_required="Visual check",
+                    usepa_framework="D001",
+                    indian_framework="HOWM Schedule II",
+                    treatment_framework="Incineration",
+                    final_disposal_framework="Licensed TSDF",
+                ) if chem == "Toluene" else
+                ManagementPlan(
+                    chemical="Nitric Acid",
+                    recommended_container="Acid bottle",
+                    storage_requirements="Acid locker",
+                    handling_and_ppe="Acid suit",
+                    segregation_and_incompatibilities="Avoid bases",
+                    labeling_requirements="Corrosive",
+                    spill_and_emergency_management="Neutralize",
+                    identification_and_characterization="Inorganic acid",
+                    prohibited_or_unsafe_actions="Do not mix with organic",
+                    verification_required="pH strip",
+                    usepa_framework="D002",
+                    indian_framework="HOWM Schedule II",
+                    treatment_framework="Neutralization",
+                    final_disposal_framework="Licensed facility",
+                )
+            )
+
+            upload_resp = self.client.post(
+                "/api/upload",
+                files={"file": ("e2e_archive_test.xlsx", buf.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            )
+            self.assertEqual(upload_resp.status_code, 200)
+            run_id = upload_resp.json()["run_id"]
+
+            try:
+                # Consume stream to completion
+                stream_resp = self.client.get(f"/api/runs/{run_id}/stream")
+                self.assertEqual(stream_resp.status_code, 200)
+                events = [line for line in stream_resp.iter_lines() if line]
+                self.assertTrue(any("complete" in e for e in events))
+
+                # 3. Verify run appears in GET /api/runs
+                runs_resp = self.client.get("/api/runs")
+                self.assertEqual(runs_resp.status_code, 200)
+                run_ids = [r["run_id"] for r in runs_resp.json()]
+                self.assertIn(run_id, run_ids)
+
+                # 4. Verify run details in GET /api/runs/{run_id}
+                details_resp = self.client.get(f"/api/runs/{run_id}")
+                self.assertEqual(details_resp.status_code, 200)
+                data = details_resp.json()
+                self.assertEqual(data["run_id"], run_id)
+                self.assertEqual(len(data["items"]), 2)
+
+                # 5. Verify Excel export parity in GET /api/runs/{run_id}/export
+                export_resp = self.client.get(f"/api/runs/{run_id}/export")
+                self.assertEqual(export_resp.status_code, 200)
+                self.assertEqual(
+                    export_resp.headers["content-type"],
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+                self.assertIn(f"hazardous_waste_management_plan_{run_id}.xlsx", export_resp.headers["content-disposition"])
+
+                wb = openpyxl.load_workbook(io.BytesIO(export_resp.content))
+                self.assertEqual(wb.sheetnames, ["Management Plan", "Classification", "Review Required"])
+
+                ws_mp = wb["Management Plan"]
+                self.assertEqual(ws_mp.max_row, 3)  # header + 2 chemicals
+                self.assertEqual(ws_mp.cell(row=1, column=1).value, "Chemical")
+                self.assertEqual(ws_mp.cell(row=1, column=14).value, "Verification Required")
+
+                ws_clf = wb["Classification"]
+                self.assertEqual([c.value for c in ws_clf[1]], ["Flammable", "Carcinogenic", "Infectious", "Toxic", "Corrosive"])
+
+                ws_rev = wb["Review Required"]
+                self.assertEqual([c.value for c in ws_rev[1]], ["Chemical", "Review Reason"])
+            finally:
+                shutil.rmtree(DEFAULT_RUNS_DIR / run_id, ignore_errors=True)
+
 
 def __getattr__(name: str):
     if name == "TestAppRoutes":
