@@ -80,6 +80,14 @@ _Avoid_: Category bucket, storage group, waste folder
 The corrective intervention applied to an unclassified or ambiguous hazardous waste record (such as refining chemical nomenclature or resolving API timeouts) to achieve verified hazard categorization and graduate the item from the Review Queue into authorized physical containment.
 _Avoid_: Fix, correction, patch, re-run, manual override
 
+**Batch Run Archive**:
+The local historical repository of executed laboratory batch runs, preserving immutable input manifests, intermediate classification matrices, and finalized waste management workbooks for retrospective auditing and zero-token reloading.
+_Avoid_: Run log, history folder, cache directory, backup storage
+
+**Institutional Export**:
+The multi-sheet regulatory compliance spreadsheet containing the 14-field Waste Management Plan, the cross-category Hazard Classification matrix, and the safety Review Queue exception register formatted to institutional EHS standards.
+_Avoid_: Dump file, download sheet, excel output, raw table
+
 ### Regulatory Standards
 
 **RCRA Framework**:
