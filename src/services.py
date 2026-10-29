@@ -381,6 +381,11 @@ def stream_batch_events(
             "bin_counts": bin_counts,
         }
 
+        try:
+            generate_classification_excel(run_id, target_runs_dir)
+        except Exception as e:
+            logger.warning(f"Failed to generate intermediate classification excel for run '{run_id}': {e}")
+
         if meta.get("pause_after_classification", False) and stage != "planning":
             meta["status"] = "paused_for_review"
             _save_meta()
@@ -579,7 +584,90 @@ def remediate_batch_item(
     except Exception as e:
         logger.warning(f"Failed to refresh batch excel for run '{run_id}': {e}")
 
+    try:
+        generate_classification_excel(run_id, target_runs_dir)
+    except Exception as e:
+        logger.warning(f"Failed to refresh classification excel for run '{run_id}': {e}")
+
     return dossier, recalculated_counts
+
+
+def generate_classification_excel(run_id: str, runs_dir: Path | None = None) -> Path:
+    target_runs_dir = runs_dir if runs_dir is not None else DEFAULT_RUNS_DIR
+    run_dir = target_runs_dir / run_id
+    meta_path = run_dir / "meta.json"
+
+    if not meta_path.exists():
+        raise FileNotFoundError(f"Run '{run_id}' not found.")
+
+    with open(meta_path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+
+    chemicals = meta.get("chemicals", [])
+    classifications = meta.get("classifications", {})
+    dossiers = meta.get("dossiers", {})
+
+    if not classifications and not dossiers:
+        raise ValueError(f"Run '{run_id}' has not performed classification yet.")
+
+    hazard_categories = ["Flammable", "Carcinogenic", "Infectious", "Toxic", "Corrosive"]
+    category_map = {cat: [] for cat in hazard_categories}
+
+    for chem in chemicals:
+        clf = classifications.get(chem, {})
+        cats = clf.get("categories", [])
+        if not cats and "classification" in clf:
+            clf_data = clf.get("classification", {})
+            cats = [k.capitalize() for k, val in clf_data.items() if val]
+        if not cats:
+            cats = dossiers.get(chem, {}).get("categories", [])
+        if not cats:
+            dos = dossiers.get(chem, {})
+            cats = [
+                cat for cat in hazard_categories
+                if dos.get(cat.lower())
+            ]
+        for cat in cats:
+            c_norm = cat.capitalize()
+            if c_norm in category_map:
+                if chem not in category_map[c_norm]:
+                    category_map[c_norm].append(chem)
+
+    max_len = max([len(v) for v in category_map.values()] or [0])
+    clf_output = {}
+    for cat in hazard_categories:
+        items = category_map[cat]
+        clf_output[cat] = items + [None] * (max_len - len(items))
+
+    # Sheet 2: Review Required
+    review_rows = []
+    for chem in chemicals:
+        clf = classifications.get(chem, {})
+        dos = dossiers.get(chem, {})
+        is_review = (
+            clf.get("bin") == "Review Queue"
+            or dos.get("review_required")
+            or dos.get("bin") == "Review Queue"
+            or dos.get("segregation_bin") == "Review Queue"
+            or not any(chem in category_map[c] for c in hazard_categories)
+        )
+        if is_review:
+            reason = clf.get("review_reason") or dos.get("review_reason") or "Classification requires human review"
+            review_rows.append({
+                "Chemical": chem,
+                "Review Reason": reason,
+            })
+
+    output_path = run_dir / "classified.xlsx"
+    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+        pd.DataFrame(clf_output, columns=hazard_categories).to_excel(
+            writer, sheet_name="Classification", index=False
+        )
+        pd.DataFrame(review_rows if review_rows else [], columns=["Chemical", "Review Reason"]).to_excel(
+            writer, sheet_name="Review Required", index=False
+        )
+
+    return output_path
 
 
 def generate_batch_excel(run_id: str, runs_dir: Path | None = None) -> Path:

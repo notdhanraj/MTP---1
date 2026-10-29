@@ -979,6 +979,70 @@ class TestBatchExcelExportAndRunHistoryServices(unittest.TestCase):
             ws_rev = wb["Review Required"]
             self.assertEqual(ws_rev.max_row, 1)  # Only header remaining!
 
+    def test_generate_classification_excel_creates_2_sheet_workbook(self):
+        from src.services import generate_classification_excel
+        import openpyxl
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            run_id = "test_run_clf_excel"
+            run_dir = tmp_path / run_id
+            run_dir.mkdir(parents=True)
+
+            meta_data = {
+                "run_id": run_id,
+                "filename": "lab_chemicals.xlsx",
+                "timestamp": "2026-10-29T10:00:00",
+                "status": "paused_for_review",
+                "chemicals": ["Methanol", "Hydrochloric Acid", "Mystery Chem"],
+                "bin_counts": {
+                    "Flammable Solvents": 1,
+                    "Inorganic Acids": 1,
+                    "Review Queue": 1,
+                },
+                "classifications": {
+                    "Methanol": {"categories": ["Flammable", "Toxic"], "bin": "Flammable Solvents"},
+                    "Hydrochloric Acid": {"categories": ["Corrosive"], "bin": "Inorganic Acids"},
+                    "Mystery Chem": {"categories": [], "bin": "Review Queue", "review_reason": "Ambiguous chemical"},
+                },
+            }
+
+            with open(run_dir / "meta.json", "w", encoding="utf-8") as f:
+                json.dump(meta_data, f, indent=2)
+
+            excel_path = generate_classification_excel(run_id, runs_dir=tmp_path)
+            self.assertTrue(excel_path.exists())
+            self.assertEqual(excel_path.name, "classified.xlsx")
+
+            wb = openpyxl.load_workbook(excel_path)
+            self.assertEqual(wb.sheetnames, ["Classification", "Review Required"])
+
+            ws_clf = wb["Classification"]
+            clf_headers = [cell.value for cell in ws_clf[1]]
+            self.assertEqual(clf_headers, ["Flammable", "Carcinogenic", "Infectious", "Toxic", "Corrosive"])
+
+            ws_rev = wb["Review Required"]
+            rev_headers = [cell.value for cell in ws_rev[1]]
+            self.assertEqual(rev_headers, ["Chemical", "Review Reason"])
+            self.assertEqual(ws_rev.max_row, 2)
+            self.assertEqual(ws_rev.cell(row=2, column=1).value, "Mystery Chem")
+
+    def test_generate_classification_excel_errors(self):
+        from src.services import generate_classification_excel
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with self.assertRaises(FileNotFoundError):
+                generate_classification_excel("non_existent_run", runs_dir=tmp_path)
+
+            empty_run = tmp_path / "empty_run"
+            empty_run.mkdir()
+            with open(empty_run / "meta.json", "w", encoding="utf-8") as f:
+                json.dump({"run_id": "empty_run", "status": "queued"}, f)
+
+            with self.assertRaises(ValueError):
+                generate_classification_excel("empty_run", runs_dir=tmp_path)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -181,6 +181,7 @@ class TestApp(unittest.TestCase):
 
         # Batch summary export buttons
         self.assertIn("Export Excel (.xlsx)", html)
+        self.assertIn("Export Classification (.xlsx)", html)
         self.assertIn("exportFilteredCsv", html)
         self.assertIn("Export Filtered CSV", html)
 
@@ -429,6 +430,14 @@ class TestAppUploadEndpoint(unittest.TestCase):
         self.assertIn('"stage": "classification"', body1)
         self.assertIn('"type": "stage_paused"', body1)
         self.assertNotIn('"type": "complete"', body1)
+
+        # Verify standalone classified.xlsx was created on disk and is exportable while paused!
+        clf_file = services.DEFAULT_RUNS_DIR / run_id / "classified.xlsx"
+        self.assertTrue(clf_file.exists(), f"Classified file {clf_file} must exist after stage 1")
+
+        clf_export_resp = self.client.get(f"/api/runs/{run_id}/export-classification")
+        self.assertEqual(clf_export_resp.status_code, 200)
+        self.assertIn(f"hazardous_waste_classification_{run_id}.xlsx", clf_export_resp.headers["content-disposition"])
 
         # 3. Resume Stage 2 (Planning)
         stream_stage2 = self.client.get(f"/api/runs/{run_id}/stream?stage=planning")
@@ -688,6 +697,54 @@ class TestAppUploadEndpoint(unittest.TestCase):
 
             # 404 guard for non-existent run
             resp_404 = self.client.get("/api/runs/non_existent_run_export_99999/export")
+            self.assertEqual(resp_404.status_code, 404)
+        finally:
+            shutil.rmtree(mock_dir, ignore_errors=True)
+
+    def test_export_run_classification_excel_endpoint(self):
+        from src.services import DEFAULT_RUNS_DIR
+        mock_id = "test_run_export_clf_excel"
+        mock_dir = DEFAULT_RUNS_DIR / mock_id
+        mock_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(mock_dir / "meta.json", "w", encoding="utf-8") as f:
+                json.dump({
+                    "run_id": mock_id,
+                    "filename": "sample.xlsx",
+                    "timestamp": "2026-10-29T12:00:00",
+                    "total_count": 1,
+                    "bin_counts": {"Flammable Solvents": 1},
+                    "status": "paused_for_review",
+                    "chemicals": ["Ethanol"],
+                    "classifications": {
+                        "Ethanol": {
+                            "classification": {"flammable": True, "toxic": False},
+                            "bin": "Flammable Solvents"
+                        }
+                    }
+                }, f)
+
+            response = self.client.get(f"/api/runs/{mock_id}/export-classification")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                response.headers.get("content-type"),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+            self.assertIn(f"hazardous_waste_classification_{mock_id}.xlsx", response.headers.get("content-disposition", ""))
+            self.assertGreater(len(response.content), 1000)
+
+            # Standalone file should now exist on disk!
+            self.assertTrue((mock_dir / "classified.xlsx").exists())
+
+            # 409 guard if classification has not been run
+            with open(mock_dir / "meta.json", "w", encoding="utf-8") as f:
+                json.dump({"run_id": mock_id, "status": "queued"}, f)
+
+            resp_queued = self.client.get(f"/api/runs/{mock_id}/export-classification")
+            self.assertEqual(resp_queued.status_code, 409)
+
+            # 404 guard for non-existent run
+            resp_404 = self.client.get("/api/runs/non_existent_run_clf_99999/export-classification")
             self.assertEqual(resp_404.status_code, 404)
         finally:
             shutil.rmtree(mock_dir, ignore_errors=True)

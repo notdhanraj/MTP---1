@@ -191,6 +191,21 @@ async def export_run_excel(run_id: str):
         raise HTTPException(status_code=409, detail=str(e))
 
 
+@app.get("/api/runs/{run_id}/export-classification")
+async def export_run_classification_excel(run_id: str):
+    try:
+        excel_path = services.generate_classification_excel(run_id)
+        return FileResponse(
+            path=excel_path,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            filename=f"hazardous_waste_classification_{run_id}.xlsx",
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found.")
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
 
 if __name__ == "__main__":
     import uvicorn
