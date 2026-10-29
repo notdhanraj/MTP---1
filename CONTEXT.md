@@ -76,6 +76,10 @@ _Avoid_: Hazard check, pre-review, verification pause, preliminary approval
 A designated physical storage sector or secondary containment unit (e.g., Flammable Cabinet, Dedicated Acid Storage) allocated to isolate chemically compatible waste streams and enforce laboratory safety segregation.
 _Avoid_: Category bucket, storage group, waste folder
 
+**Item Remediation**:
+The corrective intervention applied to an unclassified or ambiguous hazardous waste record (such as refining chemical nomenclature or resolving API timeouts) to achieve verified hazard categorization and graduate the item from the Review Queue into authorized physical containment.
+_Avoid_: Fix, correction, patch, re-run, manual override
+
 ### Regulatory Standards
 
 **RCRA Framework**:
