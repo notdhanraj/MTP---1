@@ -16,7 +16,16 @@ class FakeResponses:
 
     def parse(self, **kwargs):
         self.calls.append(kwargs)
+        inp = kwargs.get('input', '')
         if kwargs['text_format'] is HazardClassification:
+            if 'Hydrochloric Acid' in inp:
+                return types.SimpleNamespace(output_parsed=HazardClassification(
+                    flammable=False, carcinogenic=False, infectious=False, toxic=True, corrosive=True
+                ))
+            if 'Mystery' in inp or 'Unknown' in inp:
+                return types.SimpleNamespace(output_parsed=HazardClassification(
+                    flammable=False, carcinogenic=False, infectious=False, toxic=False, corrosive=False
+                ))
             return types.SimpleNamespace(output_parsed=HazardClassification(
                 flammable=True, carcinogenic=False, infectious=False, toxic=True, corrosive=False
             ))
@@ -474,6 +483,53 @@ class TestAppUploadEndpoint(unittest.TestCase):
             json={"original_name": "Acetone", "new_name": "Methanol"}
         )
         self.assertEqual(retry_resp.status_code, 404)
+
+    def test_e2e_remediation_and_cabinet_graduation(self):
+        from src.app import app
+        app.state.client = FakeClient()
+
+        # 1. Create a workbook with an unknown ambiguous chemical
+        excel_bytes = self._create_test_excel(['Mystery Chemical Mix', 'Methanol'])
+        upload_resp = self.client.post(
+            "/api/upload",
+            files={"file": ("inventory.xlsx", excel_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+        )
+        self.assertEqual(upload_resp.status_code, 200)
+        run_id = upload_resp.json()["run_id"]
+
+        # 2. Stream to completion
+        stream_resp = self.client.get(f"/api/runs/{run_id}/stream")
+        self.assertEqual(stream_resp.status_code, 200)
+
+        # 3. Verify Mystery Chemical Mix is initially in Review Queue
+        meta_path = Path("data/runs") / run_id / "meta.json"
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta_before = json.load(f)
+        self.assertIn("Mystery Chemical Mix", meta_before["dossiers"])
+        self.assertTrue(meta_before["dossiers"]["Mystery Chemical Mix"]["review_required"])
+        self.assertEqual(meta_before["dossiers"]["Mystery Chemical Mix"]["segregation_bin"], "Review Queue")
+        initial_review_count = meta_before["bin_counts"]["Review Queue"]
+
+        # 4. Remediate 'Mystery Chemical Mix' -> 'Hydrochloric Acid'
+        retry_resp = self.client.post(
+            f"/api/runs/{run_id}/retry",
+            json={"original_name": "Mystery Chemical Mix", "new_name": "Hydrochloric Acid"}
+        )
+        self.assertEqual(retry_resp.status_code, 200)
+        result = retry_resp.json()
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["chemical"], "Hydrochloric Acid")
+        self.assertFalse(result["dossier"]["review_required"])
+        self.assertEqual(result["dossier"]["segregation_bin"], "Inorganic Acids")
+
+        # 5. Verify graduation in metadata
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta_after = json.load(f)
+        self.assertIn("Hydrochloric Acid", meta_after["chemicals"])
+        self.assertNotIn("Mystery Chemical Mix", meta_after["chemicals"])
+        self.assertEqual(meta_after["bin_counts"]["Review Queue"], initial_review_count - 1)
+        self.assertEqual(meta_after["bin_counts"]["Inorganic Acids"], 1)
+        self.assertEqual(meta_after["remediated_from"]["Hydrochloric Acid"], "Mystery Chemical Mix")
 
 
 def __getattr__(name: str):
