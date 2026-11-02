@@ -94,6 +94,8 @@ class TestApp(unittest.TestCase):
         self.assertIn('pauseAfterClassification', html)
         self.assertIn('streamActive', html)
         self.assertIn('streamProgress', html)
+        self.assertIn("streamStage === 'completed'", html)
+        self.assertIn('streamPaused', html)
         self.assertIn('Proceed to Plan Generation', html)
         self.assertIn('EventSource', html)
 

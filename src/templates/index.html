@@ -173,7 +173,12 @@
              class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
           <div class="flex items-center justify-between gap-4">
             <div class="flex items-center gap-2.5">
-              <div :class="streamActive ? 'animate-spin' : ''" class="w-4 h-4 rounded-full border-2 border-emerald-400 border-t-transparent shrink-0"></div>
+              <!-- Spinning Loader when Active -->
+              <div x-show="streamActive" class="w-4 h-4 rounded-full border-2 border-emerald-400 border-t-transparent animate-spin shrink-0"></div>
+              <!-- Checkmark when Completed -->
+              <span x-show="streamStage === 'completed'" class="text-emerald-400 font-bold text-sm leading-none shrink-0">✓</span>
+              <!-- Pause Indicator when Paused -->
+              <span x-show="streamPaused" class="text-amber-400 text-xs font-bold shrink-0">⏸</span>
               <span class="text-xs font-mono font-medium text-slate-200" x-text="streamMessage || 'Processing batch...'"></span>
             </div>
             <span class="text-xs font-mono font-bold text-emerald-400" x-text="streamProgress + '%'"></span>
