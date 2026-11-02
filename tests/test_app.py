@@ -67,7 +67,8 @@ class TestApp(unittest.TestCase):
         response = self.client.get('/')
         self.assertEqual(response.status_code, 200)
         self.assertIn('text/html', response.headers['content-type'])
-        self.assertIn('HazWaste Studio', response.text)
+        self.assertIn('Hazardous Waste Management', response.text)
+        self.assertIn('M.Tech Project I', response.text)
 
     def test_root_template_contains_upload_modal_and_grid_elements(self):
         response = self.client.get('/')
