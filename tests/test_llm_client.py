@@ -1,3 +1,4 @@
+import json
 import os
 import types
 import unittest
@@ -276,6 +277,50 @@ class TestLLMClient(unittest.TestCase):
         os.environ.pop("OPENAI_API_KEY", None)
         with self.assertRaises(RuntimeError) as ctx:
             classify_chemical("Acetone")
+        self.assertIn("OPENROUTER_API_KEY", str(ctx.exception))
+
+    def test_make_plan_uses_openrouter_tool_calling(self):
+        from src.generate_management_plan import make_plan, ManagementPlan
+
+        mock_client = MagicMock()
+        mock_tool_call = types.SimpleNamespace(
+            function=types.SimpleNamespace(
+                name="ManagementPlan",
+                arguments=json.dumps({
+                    "chemical": "Methanol",
+                    "identification_and_characterization": "Solvent",
+                    "segregation_and_incompatibilities": "Keep away from oxidizers",
+                    "recommended_container": "Safety Can",
+                    "labeling_requirements": "Flammable",
+                    "storage_requirements": "Flammables cabinet",
+                    "handling_and_ppe": "Nitrile gloves",
+                    "spill_and_emergency_management": "Absorb with pads",
+                    "treatment_framework": "Thermal oxidation",
+                    "final_disposal_framework": "Authorized TSDF",
+                    "usepa_framework": "D001",
+                    "indian_framework": "HOWM Schedule II",
+                    "prohibited_or_unsafe_actions": "Do not drain dispose",
+                    "verification_required": "Flash point check"
+                })
+            )
+        )
+        mock_client.chat.completions.create.return_value = types.SimpleNamespace(
+            choices=[types.SimpleNamespace(message=types.SimpleNamespace(tool_calls=[mock_tool_call], content=None))]
+        )
+
+        plan = make_plan("Methanol", ["Flammable", "Toxic"], client=mock_client)
+        self.assertIsInstance(plan, ManagementPlan)
+        self.assertEqual(plan.chemical, "Methanol")
+        self.assertEqual(plan.recommended_container, "Safety Can")
+        self.assertEqual(plan.usepa_framework, "D001")
+
+    def test_make_plan_default_client_missing_key_raises(self):
+        from src.generate_management_plan import make_plan
+
+        os.environ.pop("OPENROUTER_API_KEY", None)
+        os.environ.pop("OPENAI_API_KEY", None)
+        with self.assertRaises(RuntimeError) as ctx:
+            make_plan("Methanol", ["Flammable"])
         self.assertIn("OPENROUTER_API_KEY", str(ctx.exception))
 
 

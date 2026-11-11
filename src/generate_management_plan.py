@@ -1,8 +1,12 @@
 import os
 import time
 import pandas as pd
-from openai import OpenAI
 from pydantic import BaseModel
+from src.llm_client import (
+    get_openrouter_client,
+    generate_structured_output,
+    get_model_name,
+)
 
 
 
@@ -30,8 +34,9 @@ load_env_file()
 
 INPUT_FILE = "classified_hazardous_waste.xlsx"
 OUTPUT_FILE = "hazardous_waste_management_plan.xlsx"
-MODEL = "gpt-6-luna"
+MODEL = get_model_name()
 REASONING_EFFORT = "medium"
+client = None
 
 CATEGORIES = [
     "Flammable",
@@ -59,14 +64,7 @@ class ManagementPlan(BaseModel):
     verification_required: str
 
 
-api_key = os.getenv("OPENAI_API_KEY")
 
-if not api_key:
-    raise RuntimeError(
-        "OPENAI_API_KEY environment variable is not set."
-    )
-
-client = OpenAI(api_key=api_key)
 
 
 def get_unique_chemicals(df):
@@ -96,9 +94,7 @@ def get_unique_chemicals(df):
 
 
 def make_plan(chemical, categories, client=None):
-    active_client = client if client is not None else globals().get("client")
-    if active_client is None:
-        raise RuntimeError("OpenAI client is not configured.")
+    active_client = client if client is not None else get_openrouter_client()
 
     category_text = ", ".join(categories)
 
@@ -167,17 +163,12 @@ For each field provide concise but practically useful institutional
 guidance.
 """
 
-    response = active_client.responses.parse(
-        model=MODEL,
-        input=prompt,
-        reasoning={"effort": REASONING_EFFORT},
-        text_format=ManagementPlan,
+    return generate_structured_output(
+        client=active_client,
+        model=get_model_name(),
+        prompt=prompt,
+        response_model=ManagementPlan,
     )
-
-    if response.output_parsed is None:
-        raise RuntimeError("OpenAI returned no parsed management-plan output.")
-
-    return response.output_parsed
 
 
 def main():
