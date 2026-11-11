@@ -227,6 +227,57 @@ class TestLLMClient(unittest.TestCase):
         self.assertIn("503", str(ctx.exception))
         self.assertEqual(mock_client.chat.completions.create.call_count, 3)
 
+    def test_classify_chemical_uses_openrouter_tool_calling(self):
+        from src.classify_waste import classify_chemical, HazardClassification
+
+        mock_client = MagicMock()
+        mock_tool_call = types.SimpleNamespace(
+            function=types.SimpleNamespace(
+                name="HazardClassification",
+                arguments='{"flammable": true, "carcinogenic": false, "infectious": false, "toxic": true, "corrosive": false}'
+            )
+        )
+        mock_client.chat.completions.create.return_value = types.SimpleNamespace(
+            choices=[types.SimpleNamespace(message=types.SimpleNamespace(tool_calls=[mock_tool_call], content=None))]
+        )
+
+        res = classify_chemical("Acetone", client=mock_client)
+        self.assertIsInstance(res, HazardClassification)
+        self.assertTrue(res.flammable)
+        self.assertTrue(res.toxic)
+        self.assertFalse(res.corrosive)
+
+    def test_classify_chemical_content_json_fallback(self):
+        from src.classify_waste import classify_chemical, HazardClassification
+
+        mock_client = MagicMock()
+        mock_response = types.SimpleNamespace(
+            choices=[
+                types.SimpleNamespace(
+                    message=types.SimpleNamespace(
+                        tool_calls=[],
+                        content='```json\n{"flammable": true, "carcinogenic": false, "infectious": false, "toxic": false, "corrosive": false}\n```'
+                    )
+                )
+            ]
+        )
+        mock_client.chat.completions.create.return_value = mock_response
+
+        res = classify_chemical("Ethanol", client=mock_client)
+        self.assertIsInstance(res, HazardClassification)
+        self.assertTrue(res.flammable)
+        self.assertFalse(res.carcinogenic)
+        self.assertFalse(res.toxic)
+
+    def test_classify_chemical_default_client_missing_key_raises(self):
+        from src.classify_waste import classify_chemical
+
+        os.environ.pop("OPENROUTER_API_KEY", None)
+        os.environ.pop("OPENAI_API_KEY", None)
+        with self.assertRaises(RuntimeError) as ctx:
+            classify_chemical("Acetone")
+        self.assertIn("OPENROUTER_API_KEY", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

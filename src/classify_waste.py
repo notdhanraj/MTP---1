@@ -1,8 +1,13 @@
 import os
 import time
 import pandas as pd
-from openai import OpenAI
 from pydantic import BaseModel
+from src.llm_client import (
+    get_openrouter_client,
+    generate_structured_output,
+    get_model_name,
+    DEFAULT_OPENROUTER_MODEL,
+)
 
 
 def load_env_file(env_path=None):
@@ -29,8 +34,9 @@ load_env_file()
 
 INPUT_FILE = "C:\\Users\\sdhan\\OneDrive\\Desktop\\MTP - 1\\Code Test\\src\\Hazardous Waste.xlsx"
 OUTPUT_FILE = "classified_hazardous_waste.xlsx"
-MODEL = "gpt-6-luna"
+MODEL = get_model_name()
 REASONING_EFFORT = "medium"
+client = None
 
 
 class HazardClassification(BaseModel):
@@ -41,24 +47,12 @@ class HazardClassification(BaseModel):
     corrosive: bool
 
 
-api_key = os.getenv("OPENAI_API_KEY")
-
-if not api_key:
-    raise RuntimeError(
-        "OPENAI_API_KEY environment variable is not set."
-    )
-
-client = OpenAI(api_key=api_key)
-
-
 def normalize_chemical_name(value):
     return " ".join(str(value).strip().split())
 
 
 def classify_chemical(chemical, client=None):
-    active_client = client if client is not None else globals().get("client")
-    if active_client is None:
-        raise RuntimeError("OpenAI client is not configured.")
+    active_client = client if client is not None else get_openrouter_client()
 
     prompt = f"""
 You are assisting with preliminary hazardous-waste classification for
@@ -99,17 +93,12 @@ Important classification rules:
   waste description provided.
 """
 
-    response = active_client.responses.parse(
-        model=MODEL,
-        input=prompt,
-        reasoning={"effort": REASONING_EFFORT},
-        text_format=HazardClassification,
+    return generate_structured_output(
+        client=active_client,
+        model=get_model_name(),
+        prompt=prompt,
+        response_model=HazardClassification,
     )
-
-    if response.output_parsed is None:
-        raise RuntimeError("OpenAI returned no parsed classification output.")
-
-    return response.output_parsed
 
 
 def main():
