@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from pathlib import Path
 import re
 import time
 from typing import TypeVar
@@ -17,8 +18,34 @@ DEFAULT_TITLE = "Hazardous Waste Management"
 T = TypeVar("T", bound=BaseModel)
 
 
+def load_env_file(dotenv_path: Path | None = None) -> None:
+    """Load environment variables from .env file into os.environ if present."""
+    if dotenv_path is None:
+        dotenv_path = Path(__file__).resolve().parent.parent / ".env"
+    if dotenv_path.is_file():
+        try:
+            with open(dotenv_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" in line:
+                        key, val = line.split("=", 1)
+                        key = key.strip()
+                        val = val.strip().strip("'\"")
+                        if key:
+                            os.environ[key] = val
+        except Exception as e:
+            logger.debug(f"Could not load .env file from {dotenv_path}: {e}")
+
+
+# Load .env at import time if present
+load_env_file()
+
+
 def get_model_name() -> str:
     """Get configured OpenRouter model name with default fallback."""
+    load_env_file()
     return os.getenv("OPENROUTER_MODEL") or DEFAULT_OPENROUTER_MODEL
 
 
@@ -27,6 +54,7 @@ def get_openrouter_client(
     base_url: str | None = None,
 ) -> OpenAI:
     """Initialize OpenAI client configured for OpenRouter endpoint and headers."""
+    load_env_file()
     resolved_key = (
         api_key
         or os.getenv("OPENROUTER_API_KEY")
