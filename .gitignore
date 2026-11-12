@@ -16,6 +16,11 @@ __pycache__/
 data/runs/
 .superpowers/
 
+# Local documentation & agent context (kept locally, omitted from runtime push)
+docs/
+CONTEXT.md
+AGENTS.md
+
 # OS artifacts
 .DS_Store
 Thumbs.db
