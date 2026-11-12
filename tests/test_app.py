@@ -1,6 +1,7 @@
 import io
 import json
 from pathlib import Path
+import re
 import shutil
 import types
 import unittest
@@ -48,9 +49,100 @@ class FakeResponses:
         ))
 
 
+class FakeCompletions:
+    def __init__(self, client):
+        self.client = client
+
+    def create(self, **kwargs):
+        tool_choice = kwargs.get("tool_choice")
+        tools = kwargs.get("tools") or []
+        tool_name = None
+        if isinstance(tool_choice, dict) and "function" in tool_choice:
+            tool_name = tool_choice["function"].get("name")
+        elif tools and isinstance(tools[0], dict) and "function" in tools[0]:
+            tool_name = tools[0]["function"].get("name")
+
+        if tool_name == "ManagementPlan":
+            schema = ManagementPlan
+        elif tool_name == "HazardClassification":
+            schema = HazardClassification
+        else:
+            messages = kwargs.get("messages") or [{}]
+            prompt = messages[0].get("content", "") if messages else ""
+            if "hazard profile" in prompt.lower():
+                schema = HazardClassification
+            else:
+                schema = ManagementPlan
+
+        messages = kwargs.get("messages") or [{}]
+        prompt = messages[0].get("content", "") if messages else ""
+
+        match = re.search(r"Chemical(?:\s+name)?:\s*([^\n\r]+)", prompt, re.IGNORECASE)
+        chem_or_prompt = match.group(1).strip() if match else prompt
+
+        res = self.client.responses.parse(text_format=schema, input=chem_or_prompt)
+
+        output_model = getattr(res, "output_parsed", res)
+        if output_model is None:
+            if schema is HazardClassification:
+                output_model = HazardClassification(
+                    flammable=True, carcinogenic=False, infectious=False, toxic=False, corrosive=False
+                )
+            else:
+                output_model = ManagementPlan(
+                    chemical=chem_or_prompt,
+                    identification_and_characterization="Mock characterization",
+                    segregation_and_incompatibilities="Mock segregation",
+                    recommended_container="Safety can",
+                    labeling_requirements="Mock label",
+                    storage_requirements="Mock storage",
+                    handling_and_ppe="Mock PPE",
+                    spill_and_emergency_management="Mock spill",
+                    treatment_framework="Mock treatment",
+                    final_disposal_framework="Mock disposal",
+                    usepa_framework="D001",
+                    indian_framework="HOWM Schedule I",
+                    prohibited_or_unsafe_actions="Mock prohibited",
+                    verification_required="Mock verification",
+                )
+
+        if hasattr(output_model, "model_dump_json"):
+            args_json = output_model.model_dump_json()
+        elif isinstance(output_model, dict):
+            args_json = json.dumps(output_model)
+        else:
+            args_json = json.dumps(output_model)
+
+        tool_call = types.SimpleNamespace(
+            id="call_mock_123",
+            type="function",
+            function=types.SimpleNamespace(
+                name=schema.__name__ if hasattr(schema, "__name__") else "tool",
+                arguments=args_json,
+            ),
+        )
+        message = types.SimpleNamespace(
+            role="assistant",
+            content=args_json,
+            tool_calls=[tool_call],
+        )
+        choice = types.SimpleNamespace(
+            index=0,
+            message=message,
+            finish_reason="tool_calls",
+        )
+        return types.SimpleNamespace(choices=[choice])
+
+
+class FakeChat:
+    def __init__(self, client):
+        self.completions = FakeCompletions(client)
+
+
 class FakeClient:
     def __init__(self):
         self.responses = FakeResponses()
+        self.chat = FakeChat(self)
 
 
 class TestApp(unittest.TestCase):
