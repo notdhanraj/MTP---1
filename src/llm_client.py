@@ -18,8 +18,16 @@ DEFAULT_TITLE = "Hazardous Waste Management"
 T = TypeVar("T", bound=BaseModel)
 
 
-def load_env_file(dotenv_path: Path | None = None) -> None:
+_env_loaded = False
+
+
+def load_env_file(dotenv_path: Path | None = None, force: bool = False) -> None:
     """Load environment variables from .env file into os.environ if present."""
+    global _env_loaded
+    if _env_loaded and not force:
+        return
+    _env_loaded = True
+
     if dotenv_path is None:
         dotenv_path = Path(__file__).resolve().parent.parent / ".env"
     if dotenv_path.is_file():
@@ -33,7 +41,7 @@ def load_env_file(dotenv_path: Path | None = None) -> None:
                         key, val = line.split("=", 1)
                         key = key.strip()
                         val = val.strip().strip("'\"")
-                        if key:
+                        if key and (force or key not in os.environ):
                             os.environ[key] = val
         except Exception as e:
             logger.debug(f"Could not load .env file from {dotenv_path}: {e}")
@@ -45,7 +53,6 @@ load_env_file()
 
 def get_model_name() -> str:
     """Get configured OpenRouter model name with default fallback."""
-    load_env_file()
     return os.getenv("OPENROUTER_MODEL") or DEFAULT_OPENROUTER_MODEL
 
 
@@ -54,7 +61,6 @@ def get_openrouter_client(
     base_url: str | None = None,
 ) -> OpenAI:
     """Initialize OpenAI client configured for OpenRouter endpoint and headers."""
-    load_env_file()
     resolved_key = (
         api_key
         or os.getenv("OPENROUTER_API_KEY")
