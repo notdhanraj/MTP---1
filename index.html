@@ -60,6 +60,14 @@
           <span>Run History</span>
           <span class="px-1.5 py-0.2 rounded-full font-mono text-[10px] bg-slate-700 text-emerald-400 font-bold" x-text="runHistory.length"></span>
         </button>
+        <button x-show="isHostedRemotely"
+                @click="settingsModalOpen = true"
+                title="Configure Backend API URL"
+                class="px-2.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-xs font-medium transition border border-slate-700 flex items-center gap-1.5 shadow-sm">
+          <span>⚙️</span>
+          <span class="hidden sm:inline">Backend</span>
+          <span class="w-1.5 h-1.5 rounded-full" :class="backendConfigured ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'"></span>
+        </button>
         <button @click="uploadModalOpen = true"
                 class="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-medium transition shadow-sm whitespace-nowrap">
           <span>📁</span>
@@ -92,7 +100,7 @@
             </div>
             <div class="flex flex-wrap items-center gap-2.5">
               <!-- Export Excel (.xlsx) -->
-              <a :href="'/api/runs/' + activeBatch.run_id + '/export'"
+              <a :href="apiUrl('/api/runs/' + activeBatch.run_id + '/export')"
                  download
                  class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold transition flex items-center gap-1.5 shadow-md shadow-emerald-950/40">
                 <span>📊</span>
@@ -100,7 +108,7 @@
               </a>
 
               <!-- Export Classification (.xlsx) -->
-              <a :href="'/api/runs/' + activeBatch.run_id + '/export-classification'"
+              <a :href="apiUrl('/api/runs/' + activeBatch.run_id + '/export-classification')"
                  download
                  class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-medium transition border border-slate-700 flex items-center gap-1.5">
                 <span>📑</span>
@@ -220,7 +228,7 @@
               <span>⚠️ Classification complete. Review hazard badges below before generating plans.</span>
             </div>
             <div class="flex items-center gap-2">
-              <a :href="'/api/runs/' + activeBatch.run_id + '/export-classification'"
+              <a :href="apiUrl('/api/runs/' + activeBatch.run_id + '/export-classification')"
                  download
                  class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-medium border border-slate-700 transition flex items-center gap-1.5 shadow-sm">
                 <span>📥</span>
@@ -1198,7 +1206,7 @@
                   <span>👁️</span>
                   <span>Load Batch</span>
                 </button>
-                <a :href="'/api/runs/' + run.run_id + '/export'"
+                <a :href="apiUrl('/api/runs/' + run.run_id + '/export')"
                    download
                    class="px-2.5 py-1.5 bg-slate-800/80 hover:bg-emerald-950/60 text-slate-300 hover:text-emerald-300 rounded-lg text-xs font-mono transition border border-slate-700/80 hover:border-emerald-700/60 flex items-center gap-1">
                   <span>📥</span>
@@ -1212,6 +1220,33 @@
     </div>
   </div>
 
+  <!-- Backend API Settings Modal (for GitHub Pages / remote hosting) -->
+  <div x-show="settingsModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm" x-cloak>
+    <div @click.away="settingsModalOpen = false" class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-semibold text-white flex items-center gap-2">
+          <span>⚙️</span>
+          <span>Backend API Server</span>
+        </h3>
+        <button @click="settingsModalOpen = false" class="text-slate-400 hover:text-white text-lg">&times;</button>
+      </div>
+      <p class="text-xs text-slate-400 leading-relaxed">
+        When hosted statically on GitHub Pages, specify the base URL of your live FastAPI backend server (e.g. <code class="text-emerald-400">https://your-api.onrender.com</code>). Leave blank for same-origin local development.
+      </p>
+      <div>
+        <label class="block text-[11px] font-mono text-slate-400 uppercase tracking-wider mb-1">Backend URL</label>
+        <input type="text"
+               x-model="backendUrlInput"
+               placeholder="https://your-api.onrender.com"
+               class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500">
+      </div>
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+        <button @click="settingsModalOpen = false" class="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white">Cancel</button>
+        <button @click="saveBackendUrl()" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold shadow-md">Save & Connect</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     function hazWasteApp() {
       return {
@@ -1220,6 +1255,25 @@
         activeDossier: null,
         drawerOpen: false,
         historyDrawerOpen: false,
+        settingsModalOpen: false,
+        backendUrlInput: localStorage.getItem('hazwaste_api_base') || '',
+        get isHostedRemotely() {
+          return !['localhost', '127.0.0.1'].includes(window.location.hostname);
+        },
+        get backendConfigured() {
+          return !!(window.API_BASE_URL || localStorage.getItem('hazwaste_api_base'));
+        },
+        saveBackendUrl() {
+          let url = this.backendUrlInput.trim();
+          if (url) {
+            url = url.replace(/\/+$/, '');
+            localStorage.setItem('hazwaste_api_base', url);
+          } else {
+            localStorage.removeItem('hazwaste_api_base');
+          }
+          this.settingsModalOpen = false;
+          this.fetchRunHistory();
+        },
         runHistory: [],
         activeTab: 'safety',
         uploadModalOpen: false,
@@ -1252,13 +1306,18 @@
           review: true
         },
 
+        apiUrl(endpoint) {
+          const base = window.API_BASE_URL || (['localhost', '127.0.0.1'].includes(window.location.hostname) ? '' : (localStorage.getItem('hazwaste_api_base') || ''));
+          return (base ? base.replace(/\/+$/, '') : '') + endpoint;
+        },
+
         init() {
           this.fetchRunHistory();
         },
 
         async fetchRunHistory() {
           try {
-            const resp = await fetch('/api/runs');
+            const resp = await fetch(this.apiUrl('/api/runs'));
             if (resp.ok) {
               this.runHistory = await resp.json();
             }
@@ -1274,7 +1333,7 @@
 
         async loadRun(runId) {
           try {
-            const resp = await fetch(`/api/runs/${runId}`);
+            const resp = await fetch(this.apiUrl(`/api/runs/${runId}`));
             if (!resp.ok) throw new Error(`Failed to load run ${runId}`);
             const data = await resp.json();
             this.activeBatch = data;
@@ -1383,7 +1442,7 @@
           this.retryError = null;
 
           try {
-            const resp = await fetch('/api/runs/' + this.activeBatch.run_id + '/retry', {
+            const resp = await fetch(this.apiUrl('/api/runs/' + this.activeBatch.run_id + '/retry'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ original_name: originalName, new_name: newName })
@@ -1592,7 +1651,7 @@
 
           this.isLoading = true;
           try {
-            const resp = await fetch('/api/lookup', {
+            const resp = await fetch(this.apiUrl('/api/lookup'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ chemical: query })
@@ -1647,7 +1706,7 @@
             formData.append('file', file);
             formData.append('pause_after_classification', this.pauseAfterClassification.toString());
 
-            const resp = await fetch('/api/upload', {
+            const resp = await fetch(this.apiUrl('/api/upload'), {
               method: 'POST',
               body: formData
             });
@@ -1697,7 +1756,7 @@
             this.eventSource = null;
           }
 
-          const streamUrl = '/api/runs/' + runId + '/stream' + (stage ? '?stage=' + encodeURIComponent(stage) : '');
+          const streamUrl = this.apiUrl('/api/runs/' + runId + '/stream' + (stage ? '?stage=' + encodeURIComponent(stage) : ''));
           this.eventSource = new EventSource(streamUrl);
           this.streamActive = true;
           this.streamPaused = false;

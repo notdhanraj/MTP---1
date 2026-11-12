@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -15,16 +16,24 @@ from src.models import (
 import src.services as services
 
 BASE_DIR = Path(__file__).resolve().parent
-TEMPLATES_DIR = BASE_DIR / "templates"
+REPO_ROOT = BASE_DIR.parent
+TEMPLATES_DIRS = [str(REPO_ROOT), str(BASE_DIR / "templates")]
 
 app = FastAPI(
     title="Hazardous Waste Management Platform (D2S-MTP)",
     description="Wet laboratory hazardous waste classification and physical segregation planning.",
     version="1.0.0",
 )
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.state.client = None
 
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+templates = Jinja2Templates(directory=TEMPLATES_DIRS)
 
 
 class LookupRequest(BaseModel):
